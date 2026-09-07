@@ -1,0 +1,433 @@
+import { useState } from 'react'
+import {
+  MAX_REASONABLE_ELAPSED_MS,
+  computeElapsedMs,
+  formatElapsed,
+  parseElapsedInput,
+  startedAtForElapsed,
+} from '../domain/clock'
+import { MAX_SECOND_HALF_OPPORTUNITIES } from '../domain/engine'
+import {
+  displayTeamName,
+  isNearHydrationTarget,
+  isPastHydrationTarget,
+  parseHydrationTargetMinutes,
+} from '../domain/matchSetup'
+import type { HalfKey } from '../domain/matchTypes'
+import { type AppState, getDerivedMatchState } from '../domain/matchStore'
+import type { SubstitutionPair, SubstitutionPhase, TeamId } from '../domain/types'
+import { useNow } from '../hooks/useNow'
+import { ConfirmDialog } from './ConfirmDialog'
+import { SubstitutionHistory } from './SubstitutionHistory'
+import { SubstitutionPanel } from './SubstitutionPanel'
+
+const PHASE_LABELS: Record<AppState['phase'], string> = {
+  PRE_MATCH: '試合前',
+  FIRST_HALF: '前半',
+  HALF_TIME: 'ハーフタイム',
+  SECOND_HALF: '後半',
+  FULL_TIME: '試合終了',
+}
+
+interface MatchScreenProps {
+  state: AppState
+  onEndFirstHalf: () => void
+  onStartSecondHalf: () => void
+  onEndMatch: () => void
+  onStartHydrationPause: () => void
+  onEndHydrationPause: () => void
+  onCorrectHalfStart: (half: HalfKey, correctedAt: number) => void
+  onSetDraftPair: (teamId: TeamId, pairIndex: number, role: 'out' | 'in', playerId: string | undefined) => void
+  onAddDraftPair: (teamId: TeamId) => void
+  onRemoveDraftPair: (teamId: TeamId, pairIndex: number) => void
+  onClearDraft: (teamId: TeamId) => void
+  onConfirmDraft: (teamId: TeamId) => string[]
+  onDeleteSubstitutionEvent: (eventId: string) => void
+  onUpdateSubstitutionEventPairs: (eventId: string, pairs: SubstitutionPair[]) => void
+  onLinkStoppage: (eventId: string) => void
+  onUnlinkStoppage: (eventId: string) => void
+  onMarkHydrationCompleted: (half: HalfKey) => void
+  onStartNewMatch: () => void
+}
+
+export function MatchScreen({
+  state,
+  onEndFirstHalf,
+  onStartSecondHalf,
+  onEndMatch,
+  onStartHydrationPause,
+  onEndHydrationPause,
+  onCorrectHalfStart,
+  onSetDraftPair,
+  onAddDraftPair,
+  onRemoveDraftPair,
+  onClearDraft,
+  onConfirmDraft,
+  onDeleteSubstitutionEvent,
+  onUpdateSubstitutionEventPairs,
+  onLinkStoppage,
+  onUnlinkStoppage,
+  onMarkHydrationCompleted,
+  onStartNewMatch,
+}: MatchScreenProps) {
+  const now = useNow()
+  const [confirmAction, setConfirmAction] = useState<'END_FIRST_HALF' | 'END_MATCH' | 'START_NEW' | null>(null)
+  const [confirmingEarlyHydration, setConfirmingEarlyHydration] = useState(false)
+  const [activeTeam, setActiveTeam] = useState<TeamId>('HOME')
+
+  const elapsedMs = computeElapsedMs(state.clock, state.phase, now)
+  const isPaused = state.clock.activePauseStartedAt !== null
+  const isMidHalf = state.phase === 'FIRST_HALF' || state.phase === 'SECOND_HALF'
+  const regulationTimePassed = isMidHalf && elapsedMs >= state.settings.halfLengthMinutes * 60_000
+  const elapsedLooksWrong = isMidHalf && elapsedMs > MAX_REASONABLE_ELAPSED_MS
+
+  // Only pops the correction panel open by default when a resumed match's
+  // stored timestamps already look wrong — never re-opens itself later just
+  // because the operator collapsed it.
+  const [showCorrection, setShowCorrection] = useState(
+    () => (state.phase === 'FIRST_HALF' || state.phase === 'SECOND_HALF') && elapsedMs > MAX_REASONABLE_ELAPSED_MS,
+  )
+
+  const homeName = displayTeamName(state.settings.homeTeamName, 'HOME')
+  const awayName = displayTeamName(state.settings.awayTeamName, 'AWAY')
+
+  const currentHalf: HalfKey | null =
+    state.phase === 'FIRST_HALF' ? 'firstHalf' : state.phase === 'SECOND_HALF' ? 'secondHalf' : null
+
+  const { state: matchState, needsReview } = getDerivedMatchState(state)
+  const canSubstitute = state.phase === 'FIRST_HALF' || state.phase === 'HALF_TIME' || state.phase === 'SECOND_HALF'
+
+  const hydrationCompleted = currentHalf ? Boolean(state.hydrationCompletedByHalf?.[currentHalf]) : false
+  const hydrationTargetMinutes = parseHydrationTargetMinutes(state.settings.hydrationMemo)
+  const isNearHydration =
+    !hydrationCompleted &&
+    hydrationTargetMinutes !== null &&
+    isMidHalf &&
+    isNearHydrationTarget(elapsedMs, hydrationTargetMinutes)
+  const isPastHydration =
+    !hydrationCompleted &&
+    hydrationTargetMinutes !== null &&
+    isMidHalf &&
+    isPastHydrationTarget(elapsedMs, hydrationTargetMinutes)
+  // A target is set and it's still more than ~1 minute away — pressing
+  // "飲水を実施" here is unexpected (early or a mistap), so it asks first
+  // instead of silently trusting it. With no parseable target at all, or
+  // once within the normal 1-minute-before window, one tap is enough.
+  const isWellBeforeHydrationTarget =
+    hydrationTargetMinutes !== null && isMidHalf && !isNearHydration && !isPastHydration && !hydrationCompleted
+
+  function handleHydrationDoneClick() {
+    if (!currentHalf) return
+    if (isWellBeforeHydrationTarget) {
+      setConfirmingEarlyHydration(true)
+      return
+    }
+    onMarkHydrationCompleted(currentHalf)
+  }
+
+  return (
+    <div className="mx-auto max-w-2xl space-y-4 p-4 pb-28">
+      <section className="rounded-xl border border-gray-200 p-4 text-center">
+        <p className="text-sm font-medium text-gray-500">
+          {PHASE_LABELS[state.phase]}
+          {isMidHalf && <>｜{state.settings.halfLengthMinutes}分ハーフ</>}
+        </p>
+        <p className="mt-1 text-5xl font-bold tabular-nums text-gray-900">{formatElapsed(elapsedMs)}</p>
+        {isPaused && <p className="mt-1 text-sm font-medium text-amber-600">飲水のため時計を止めています</p>}
+        {regulationTimePassed && (
+          <p className="mt-1 text-sm text-gray-500">規定時間{state.settings.halfLengthMinutes}分を経過</p>
+        )}
+        {elapsedLooksWrong && (
+          <p className="mt-1 text-sm font-medium text-amber-700">
+            経過時間が長すぎるようです。下の「開始時刻を修正」から確認してください。
+          </p>
+        )}
+      </section>
+
+      {state.settings.hydrationMode !== 'NONE' && isMidHalf && currentHalf && (
+        <section className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">
+          {hydrationCompleted ? (
+            <p className="font-semibold">💧 飲水済み</p>
+          ) : isPastHydration ? (
+            <p className="font-semibold">💧 飲水の目安時刻です</p>
+          ) : isNearHydration ? (
+            <p className="font-semibold">💧 まもなく飲水の目安です</p>
+          ) : (
+            <p>
+              💧 飲水あり
+              {state.settings.hydrationMemo.trim() && <>｜{state.settings.hydrationMemo.trim()}</>}
+            </p>
+          )}
+          {state.settings.hydrationMode === 'RUNNING_CLOCK' && !hydrationCompleted && (
+            <button
+              type="button"
+              onClick={handleHydrationDoneClick}
+              className="mt-2 rounded-lg border border-sky-400 px-3 py-1.5 text-sm font-medium text-sky-800 active:bg-sky-100"
+            >
+              飲水を実施
+            </button>
+          )}
+        </section>
+      )}
+
+      <div className="grid grid-cols-2 gap-3 text-center">
+        <div className="rounded-xl border-2 border-blue-300 bg-blue-50/40 p-3">
+          <p className="text-sm font-bold text-gray-800">{homeName}</p>
+          {state.phase === 'SECOND_HALF' && (
+            <p className="mt-1 text-xs text-gray-600">
+              後半の交代 あと{Math.max(0, MAX_SECOND_HALF_OPPORTUNITIES - matchState.teamCounters.HOME.secondHalfOpportunitiesUsed)}回
+            </p>
+          )}
+        </div>
+        <div className="rounded-xl border-2 border-orange-300 bg-orange-50/40 p-3">
+          <p className="text-sm font-bold text-gray-800">{awayName}</p>
+          {state.phase === 'SECOND_HALF' && (
+            <p className="mt-1 text-xs text-gray-600">
+              後半の交代 あと{Math.max(0, MAX_SECOND_HALF_OPPORTUNITIES - matchState.teamCounters.AWAY.secondHalfOpportunitiesUsed)}回
+            </p>
+          )}
+        </div>
+      </div>
+
+      {state.settings.hydrationMode === 'STOP_CLOCK' && isMidHalf && (
+        <button
+          type="button"
+          onClick={isPaused ? onEndHydrationPause : onStartHydrationPause}
+          className={`w-full rounded-xl py-3 text-base font-semibold ${
+            isPaused ? 'bg-amber-600 text-white active:bg-amber-700' : 'border border-amber-400 text-amber-700 active:bg-amber-50'
+          }`}
+        >
+          {isPaused ? '試合再開' : '飲水開始'}
+        </button>
+      )}
+
+      {canSubstitute && (
+        <>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setActiveTeam('HOME')}
+              className={`flex-1 rounded-lg py-2 text-sm font-bold ${
+                activeTeam === 'HOME' ? 'bg-blue-600 text-white' : 'border border-blue-300 text-blue-700'
+              }`}
+            >
+              {homeName}
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTeam('AWAY')}
+              className={`flex-1 rounded-lg py-2 text-sm font-bold ${
+                activeTeam === 'AWAY' ? 'bg-orange-600 text-white' : 'border border-orange-300 text-orange-700'
+              }`}
+            >
+              {awayName}
+            </button>
+          </div>
+
+          <SubstitutionPanel
+            // Remounts on team switch so no leftover per-team warning can
+            // survive the switch (see SubstitutionPanel's own clearing effect
+            // for same-team clearing triggers).
+            key={activeTeam}
+            teamId={activeTeam}
+            teamLabel={activeTeam === 'HOME' ? homeName : awayName}
+            roster={state.roster}
+            matchState={matchState}
+            phase={state.phase as SubstitutionPhase}
+            draft={state.drafts[activeTeam]}
+            substitutionEvents={state.substitutionEvents}
+            onSetDraftPair={onSetDraftPair}
+            onAddDraftPair={onAddDraftPair}
+            onRemoveDraftPair={onRemoveDraftPair}
+            onClearDraft={onClearDraft}
+            onConfirm={onConfirmDraft}
+          />
+        </>
+      )}
+
+      <SubstitutionHistory
+        events={state.substitutionEvents}
+        roster={state.roster}
+        needsReview={needsReview}
+        teamLabels={{ HOME: homeName, AWAY: awayName }}
+        onDelete={onDeleteSubstitutionEvent}
+        onUpdatePairs={onUpdateSubstitutionEventPairs}
+        onLinkStoppage={onLinkStoppage}
+        onUnlinkStoppage={onUnlinkStoppage}
+      />
+
+      <details
+        open={showCorrection}
+        onToggle={(e) => setShowCorrection((e.target as HTMLDetailsElement).open)}
+        className="rounded-lg border border-gray-200 p-3 text-sm text-gray-500"
+      >
+        <summary className="cursor-pointer select-none">開始時刻を修正（押し忘れたとき）</summary>
+        {currentHalf && (
+          <HalfStartCorrectionForm half={currentHalf} now={now} onApply={onCorrectHalfStart} />
+        )}
+      </details>
+
+      <div className="fixed inset-x-0 bottom-0 z-10 border-t border-gray-200 bg-white p-4 will-change-transform">
+        {state.phase === 'FIRST_HALF' && (
+          <button
+            type="button"
+            onClick={() => setConfirmAction('END_FIRST_HALF')}
+            className="mx-auto block w-full max-w-2xl rounded-xl bg-gray-900 py-4 text-lg font-bold text-white active:bg-gray-700"
+          >
+            前半終了
+          </button>
+        )}
+        {state.phase === 'HALF_TIME' && (
+          <button
+            type="button"
+            onClick={onStartSecondHalf}
+            className="mx-auto block w-full max-w-2xl rounded-xl bg-emerald-600 py-4 text-lg font-bold text-white active:bg-emerald-700"
+          >
+            後半開始
+          </button>
+        )}
+        {state.phase === 'SECOND_HALF' && (
+          <button
+            type="button"
+            onClick={() => setConfirmAction('END_MATCH')}
+            className="mx-auto block w-full max-w-2xl rounded-xl bg-gray-900 py-4 text-lg font-bold text-white active:bg-gray-700"
+          >
+            試合終了
+          </button>
+        )}
+        {state.phase === 'FULL_TIME' && (
+          <div className="mx-auto max-w-2xl space-y-2 text-center">
+            <p className="text-base font-semibold text-gray-700">試合は終了しました</p>
+            <button
+              type="button"
+              onClick={() => setConfirmAction('START_NEW')}
+              className="w-full rounded-xl border border-gray-300 py-3 text-base text-gray-600 active:bg-gray-100"
+            >
+              新しい試合を始める
+            </button>
+          </div>
+        )}
+      </div>
+
+      {confirmAction === 'END_FIRST_HALF' && (
+        <ConfirmDialog
+          title="前半を終了しますか？"
+          message="この操作は取り消せません。前半の途中で押し間違えていないか確認してください。"
+          confirmLabel="前半を終了"
+          onConfirm={() => {
+            setConfirmAction(null)
+            onEndFirstHalf()
+          }}
+          onCancel={() => setConfirmAction(null)}
+        />
+      )}
+      {confirmAction === 'END_MATCH' && (
+        <ConfirmDialog
+          title="試合を終了しますか？"
+          message="この操作は取り消せません。試合が本当に終了しているか確認してください。"
+          confirmLabel="試合を終了"
+          onConfirm={() => {
+            setConfirmAction(null)
+            onEndMatch()
+          }}
+          onCancel={() => setConfirmAction(null)}
+        />
+      )}
+      {confirmAction === 'START_NEW' && (
+        <ConfirmDialog
+          title="新しい試合を始めますか？"
+          message="この試合の記録は消えます。この操作は取り消せません。"
+          confirmLabel="新しい試合を始める"
+          onConfirm={() => {
+            setConfirmAction(null)
+            onStartNewMatch()
+          }}
+          onCancel={() => setConfirmAction(null)}
+        />
+      )}
+      {confirmingEarlyHydration && currentHalf && (
+        <ConfirmDialog
+          title="まだ飲水目安時刻より前です"
+          message="飲水を実施しましたか？"
+          confirmLabel="実施した"
+          onConfirm={() => {
+            setConfirmingEarlyHydration(false)
+            onMarkHydrationCompleted(currentHalf)
+          }}
+          onCancel={() => setConfirmingEarlyHydration(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+interface HalfStartCorrectionFormProps {
+  half: HalfKey
+  now: number
+  onApply: (half: HalfKey, correctedAt: number) => void
+}
+
+// Asks directly for "how much time has actually passed" (e.g. 2 minutes 0
+// seconds) instead of a time-of-day — a "00:02:00" typed as one field used
+// to be read as a wall-clock time and jump the match clock by ~20 hours.
+// Minutes and seconds are separate number inputs (not a single "mm:ss" text
+// field) because Android's numeric keypad has no ":" key, which forced a
+// value like "200" to be read as 200 minutes.
+function HalfStartCorrectionForm({ half, now, onApply }: HalfStartCorrectionFormProps) {
+  const [minutes, setMinutes] = useState('')
+  const [seconds, setSeconds] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
+  function handleApply() {
+    const m = minutes.trim() === '' ? '0' : minutes.trim()
+    const s = seconds.trim() === '' ? '0' : seconds.trim()
+    // Reuses the same "m:s" parsing and safety-cap logic as the combined
+    // input used to, just built from two separate fields.
+    const result = parseElapsedInput(`${m}:${s}`)
+    if (!result.ok) {
+      setError(result.error)
+      return
+    }
+    setError(null)
+    onApply(half, startedAtForElapsed(now, result.ms))
+    setMinutes('')
+    setSeconds('')
+  }
+
+  return (
+    <div className="mt-2 space-y-2">
+      <p className="text-xs">実際にはどれくらい経過していますか？</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="number"
+          inputMode="numeric"
+          min={0}
+          value={minutes}
+          onChange={(e) => setMinutes(e.target.value)}
+          placeholder="2"
+          className="w-16 rounded border border-gray-300 px-2 py-1 text-center"
+        />
+        <span>分</span>
+        <input
+          type="number"
+          inputMode="numeric"
+          min={0}
+          max={59}
+          value={seconds}
+          onChange={(e) => setSeconds(e.target.value)}
+          placeholder="00"
+          className="w-16 rounded border border-gray-300 px-2 py-1 text-center"
+        />
+        <span>秒</span>
+        <button
+          type="button"
+          onClick={handleApply}
+          className="rounded-lg bg-gray-900 px-3 py-1.5 text-sm font-medium text-white"
+        >
+          この時間に修正する
+        </button>
+      </div>
+      {error && <p className="text-sm font-medium text-red-600">{error}</p>}
+    </div>
+  )
+}

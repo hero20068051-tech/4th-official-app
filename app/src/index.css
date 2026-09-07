@@ -1,0 +1,27 @@
+@import 'tailwindcss';
+
+:root {
+  color-scheme: light dark;
+}
+
+/* No layout on this page is meant to be wider than the viewport — any
+   accidental overflow (a fraction of a pixel is enough on mobile) lets the
+   page scroll sideways, which visually reads as the whole screen shifting
+   and doubling once fixed-position elements (the bottom action bar) stop
+   lining up with the scrolled content underneath them. */
+html,
+body {
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
+  width: 100%;
+  max-width: 100%;
+}
+
+body {
+  margin: 0;
+  position: relative;
+}
+
+#root {
+  width: 100%;
+}
