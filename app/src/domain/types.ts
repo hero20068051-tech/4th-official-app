@@ -92,3 +92,45 @@ export interface ReplayResult {
   state: MatchState
   needsReview: ReplayIssue[]
 }
+
+// --- Phase 2 v0.1: goals and cards ---
+// These live in their own arrays alongside substitutionEvents and are NEVER
+// read by engine.ts / replayMatch. A red card has no effect on substitution
+// legality or the 9 / 3 / 3 counters in v0.1 — detailed send-off player
+// state is a FUTURE item (PROJECT_RULES/05_FUTURE_IDEAS.md).
+
+export type CardKind = 'YELLOW' | 'RED'
+
+export type TeamOfficialRole = 'MANAGER' | 'COACH' | 'STAFF' | 'OTHER'
+
+// Phases in which a goal or card can be recorded — never PRE_MATCH, since the
+// match screen is not shown then.
+export type RecordablePhase = 'FIRST_HALF' | 'HALF_TIME' | 'SECOND_HALF' | 'FULL_TIME'
+
+// A goal. The score is ALWAYS derived by counting these per team
+// (matchRecord.deriveScore) — never stored — so editing or deleting a goal
+// keeps the score correct automatically.
+export interface GoalEvent {
+  id: string
+  phase: RecordablePhase
+  elapsedMs: number
+  // The team the goal counts FOR. For an own goal this is the team that
+  // benefits (the opponent of the player who put it in).
+  teamId: TeamId
+  scorerNumber: number | null // null = 得点者未確認
+  ownGoal: boolean
+  ownGoalByNumber: number | null // the opposing player who put it in; null = 背番号不明
+}
+
+// A caution or send-off, for a player (by number) or a team official.
+export interface CardEvent {
+  id: string
+  phase: RecordablePhase
+  elapsedMs: number
+  teamId: TeamId
+  card: CardKind
+  targetType: 'PLAYER' | 'OFFICIAL'
+  playerNumber: number | null // set when targetType === 'PLAYER'
+  officialRole: TeamOfficialRole | null // set when targetType === 'OFFICIAL'
+  officialName: string // optional free text; '' when not entered
+}

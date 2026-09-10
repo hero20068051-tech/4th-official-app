@@ -7,6 +7,7 @@ import {
   startedAtForElapsed,
 } from '../domain/clock'
 import { MAX_SECOND_HALF_OPPORTUNITIES } from '../domain/engine'
+import { deriveScore } from '../domain/matchRecord'
 import {
   displayTeamName,
   isNearHydrationTarget,
@@ -14,12 +15,15 @@ import {
   parseHydrationTargetMinutes,
 } from '../domain/matchSetup'
 import type { HalfKey } from '../domain/matchTypes'
-import { type AppState, getDerivedMatchState } from '../domain/matchStore'
-import type { SubstitutionPair, SubstitutionPhase, TeamId } from '../domain/types'
+import { type AppState, type CardDraft, type GoalDraft, getDerivedMatchState } from '../domain/matchStore'
+import type { RecordablePhase, SubstitutionPair, SubstitutionPhase, TeamId } from '../domain/types'
 import { useNow } from '../hooks/useNow'
+import { CardEntryPanel } from './CardEntryPanel'
 import { ConfirmDialog } from './ConfirmDialog'
-import { SubstitutionHistory } from './SubstitutionHistory'
+import { GoalEntryPanel } from './GoalEntryPanel'
+import { MatchTimeline } from './MatchTimeline'
 import { SubstitutionPanel } from './SubstitutionPanel'
+import { TeamDot } from './TeamBadge'
 
 const PHASE_LABELS: Record<AppState['phase'], string> = {
   PRE_MATCH: '試合前',
@@ -46,7 +50,13 @@ interface MatchScreenProps {
   onUpdateSubstitutionEventPairs: (eventId: string, pairs: SubstitutionPair[]) => void
   onLinkStoppage: (eventId: string) => void
   onUnlinkStoppage: (eventId: string) => void
-  onMarkHydrationCompleted: (half: HalfKey) => void
+  onMarkHydrationCompleted: (half: HalfKey, elapsedMs: number) => void
+  onRecordGoal: (draft: GoalDraft, phase: RecordablePhase, elapsedMs: number) => void
+  onUpdateGoal: (goalId: string, draft: GoalDraft) => void
+  onDeleteGoal: (goalId: string) => void
+  onRecordCard: (draft: CardDraft, phase: RecordablePhase, elapsedMs: number) => void
+  onUpdateCard: (cardId: string, draft: CardDraft) => void
+  onDeleteCard: (cardId: string) => void
   onStartNewMatch: () => void
 }
 
@@ -68,12 +78,19 @@ export function MatchScreen({
   onLinkStoppage,
   onUnlinkStoppage,
   onMarkHydrationCompleted,
+  onRecordGoal,
+  onUpdateGoal,
+  onDeleteGoal,
+  onRecordCard,
+  onUpdateCard,
+  onDeleteCard,
   onStartNewMatch,
 }: MatchScreenProps) {
   const now = useNow()
   const [confirmAction, setConfirmAction] = useState<'END_FIRST_HALF' | 'END_MATCH' | 'START_NEW' | null>(null)
   const [confirmingEarlyHydration, setConfirmingEarlyHydration] = useState(false)
   const [activeTeam, setActiveTeam] = useState<TeamId>('HOME')
+  const [entryPanel, setEntryPanel] = useState<'goal' | 'card' | null>(null)
 
   const elapsedMs = computeElapsedMs(state.clock, state.phase, now)
   const isPaused = state.clock.activePauseStartedAt !== null
@@ -116,13 +133,19 @@ export function MatchScreen({
   const isWellBeforeHydrationTarget =
     hydrationTargetMinutes !== null && isMidHalf && !isNearHydration && !isPastHydration && !hydrationCompleted
 
+  const score = deriveScore(state.goalEvents)
+  // Fresh elapsed time at the moment an event is confirmed (not the 1-second
+  // useNow tick, which can be stale if a panel was open a while).
+  const recordablePhase = state.phase as RecordablePhase
+  const currentElapsedMs = () => computeElapsedMs(state.clock, state.phase, Date.now())
+
   function handleHydrationDoneClick() {
     if (!currentHalf) return
     if (isWellBeforeHydrationTarget) {
       setConfirmingEarlyHydration(true)
       return
     }
-    onMarkHydrationCompleted(currentHalf)
+    onMarkHydrationCompleted(currentHalf, currentElapsedMs())
   }
 
   return (
@@ -133,6 +156,19 @@ export function MatchScreen({
           {isMidHalf && <>｜{state.settings.halfLengthMinutes}分ハーフ</>}
         </p>
         <p className="mt-1 text-5xl font-bold tabular-nums text-gray-900">{formatElapsed(elapsedMs)}</p>
+        <div className="mt-2 flex items-center justify-center gap-3 text-xl font-bold text-gray-900">
+          <span className="flex items-center gap-1.5">
+            <TeamDot teamId="HOME" />
+            {homeName}
+          </span>
+          <span className="tabular-nums">
+            {score.HOME} - {score.AWAY}
+          </span>
+          <span className="flex items-center gap-1.5">
+            {awayName}
+            <TeamDot teamId="AWAY" />
+          </span>
+        </div>
         {isPaused && <p className="mt-1 text-sm font-medium text-amber-600">飲水のため時計を止めています</p>}
         {regulationTimePassed && (
           <p className="mt-1 text-sm text-gray-500">規定時間{state.settings.halfLengthMinutes}分を経過</p>
@@ -201,6 +237,60 @@ export function MatchScreen({
         </button>
       )}
 
+      {/* 得点 only while the ball can be in play; カード any time the match
+          screen is up, including at half-time and after the final whistle. */}
+      <div className="flex gap-2">
+        {isMidHalf && (
+          <button
+            type="button"
+            onClick={() => setEntryPanel(entryPanel === 'goal' ? null : 'goal')}
+            className={`flex-1 rounded-xl py-3 text-base font-bold ${
+              entryPanel === 'goal' ? 'bg-blue-600 text-white' : 'border border-blue-400 text-blue-700 active:bg-blue-50'
+            }`}
+          >
+            ⚽ 得点
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => setEntryPanel(entryPanel === 'card' ? null : 'card')}
+          className={`flex-1 rounded-xl py-3 text-base font-bold ${
+            entryPanel === 'card' ? 'bg-gray-900 text-white' : 'border border-gray-400 text-gray-700 active:bg-gray-100'
+          }`}
+        >
+          🟨🟥 カード
+        </button>
+      </div>
+
+      {entryPanel === 'goal' && isMidHalf && (
+        <GoalEntryPanel
+          roster={state.roster}
+          homeName={homeName}
+          awayName={awayName}
+          submitLabel="得点を確定"
+          onSubmit={(draft) => {
+            onRecordGoal(draft, recordablePhase, currentElapsedMs())
+            setEntryPanel(null)
+          }}
+          onCancel={() => setEntryPanel(null)}
+        />
+      )}
+
+      {entryPanel === 'card' && (
+        <CardEntryPanel
+          roster={state.roster}
+          homeName={homeName}
+          awayName={awayName}
+          cardEvents={state.cardEvents}
+          submitLabel="カードを確定"
+          onSubmit={(draft) => {
+            onRecordCard(draft, recordablePhase, currentElapsedMs())
+            setEntryPanel(null)
+          }}
+          onCancel={() => setEntryPanel(null)}
+        />
+      )}
+
       {canSubstitute && (
         <>
           <div className="flex gap-2">
@@ -245,15 +335,23 @@ export function MatchScreen({
         </>
       )}
 
-      <SubstitutionHistory
-        events={state.substitutionEvents}
+      <MatchTimeline
+        substitutionEvents={state.substitutionEvents}
+        goalEvents={state.goalEvents}
+        cardEvents={state.cardEvents}
+        clock={state.clock}
+        hydrationCompletionElapsedMsByHalf={state.hydrationCompletionElapsedMsByHalf}
         roster={state.roster}
         needsReview={needsReview}
         teamLabels={{ HOME: homeName, AWAY: awayName }}
-        onDelete={onDeleteSubstitutionEvent}
-        onUpdatePairs={onUpdateSubstitutionEventPairs}
+        onDeleteSubstitution={onDeleteSubstitutionEvent}
+        onUpdateSubstitutionPairs={onUpdateSubstitutionEventPairs}
         onLinkStoppage={onLinkStoppage}
         onUnlinkStoppage={onUnlinkStoppage}
+        onEditGoal={onUpdateGoal}
+        onDeleteGoal={onDeleteGoal}
+        onEditCard={onUpdateCard}
+        onDeleteCard={onDeleteCard}
       />
 
       <details
@@ -352,7 +450,7 @@ export function MatchScreen({
           confirmLabel="実施した"
           onConfirm={() => {
             setConfirmingEarlyHydration(false)
-            onMarkHydrationCompleted(currentHalf)
+            onMarkHydrationCompleted(currentHalf, currentElapsedMs())
           }}
           onCancel={() => setConfirmingEarlyHydration(false)}
         />

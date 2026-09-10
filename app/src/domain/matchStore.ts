@@ -20,15 +20,20 @@ import {
 import type { ClockState, HalfKey, HydrationCompletionState, MatchSettings } from './matchTypes'
 import { pendingConfirmationReentryPolicy } from './reentryPolicy'
 import type {
+  CardEvent,
+  CardKind,
   DraftPair,
+  GoalEvent,
   MatchPhase,
   Player,
+  RecordablePhase,
   ReplayResult,
   SubstitutionEvent,
   SubstitutionPair,
   SubstitutionPhase,
   TeamDraft,
   TeamId,
+  TeamOfficialRole,
 } from './types'
 
 export interface AppState {
@@ -39,6 +44,10 @@ export interface AppState {
   substitutionEvents: SubstitutionEvent[]
   drafts: Record<TeamId, TeamDraft>
   hydrationCompletedByHalf: HydrationCompletionState
+  // Phase 2 v0.1 — parallel to substitutionEvents, never read by engine.ts.
+  hydrationCompletionElapsedMsByHalf: Record<HalfKey, number | null>
+  goalEvents: GoalEvent[]
+  cardEvents: CardEvent[]
 }
 
 function emptyDraft(teamId: TeamId): TeamDraft {
@@ -54,6 +63,9 @@ export function createInitialAppState(): AppState {
     substitutionEvents: [],
     drafts: { HOME: emptyDraft('HOME'), AWAY: emptyDraft('AWAY') },
     hydrationCompletedByHalf: { firstHalf: false, secondHalf: false },
+    hydrationCompletionElapsedMsByHalf: { firstHalf: null, secondHalf: null },
+    goalEvents: [],
+    cardEvents: [],
   }
 }
 
@@ -203,17 +215,42 @@ export function startHydrationPausePhase(state: AppState, now: number): AppState
 export function endHydrationPausePhase(state: AppState, now: number): AppState {
   const halfKey = currentHalfKey(state.phase)
   if (state.settings.hydrationMode !== 'STOP_CLOCK' || !halfKey) return state
+  const clock = endHydrationPause(state.clock, now, halfKey)
   return {
     ...state,
-    clock: endHydrationPause(state.clock, now, halfKey),
+    clock,
     hydrationCompletedByHalf: { ...state.hydrationCompletedByHalf, [halfKey]: true },
+    hydrationCompletionElapsedMsByHalf: recordHydrationElapsed(
+      state.hydrationCompletionElapsedMsByHalf,
+      halfKey,
+      computeElapsedMs(clock, state.phase, now),
+    ),
   }
 }
 
 // RUNNING_CLOCK mode has no pause/resume to hook into, so the operator marks
-// hydration done directly; this never touches the clock.
-export function markHydrationCompleted(state: AppState, half: HalfKey): AppState {
-  return { ...state, hydrationCompletedByHalf: { ...state.hydrationCompletedByHalf, [half]: true } }
+// hydration done directly; this never touches the clock. `elapsedMs` (when
+// given) is only used to place the "飲水" marker on the timeline.
+export function markHydrationCompleted(state: AppState, half: HalfKey, elapsedMs?: number): AppState {
+  return {
+    ...state,
+    hydrationCompletedByHalf: { ...state.hydrationCompletedByHalf, [half]: true },
+    hydrationCompletionElapsedMsByHalf:
+      elapsedMs === undefined
+        ? state.hydrationCompletionElapsedMsByHalf
+        : recordHydrationElapsed(state.hydrationCompletionElapsedMsByHalf, half, elapsedMs),
+  }
+}
+
+// Keeps the first hydration time for a half; a rare second break in the same
+// half does not overwrite it.
+function recordHydrationElapsed(
+  current: Record<HalfKey, number | null>,
+  half: HalfKey,
+  elapsedMs: number,
+): Record<HalfKey, number | null> {
+  if (current[half] !== null) return current
+  return { ...current, [half]: elapsedMs }
 }
 
 export function correctHalfStart(state: AppState, half: HalfKey, correctedAt: number): AppState {
@@ -394,4 +431,102 @@ export function unlinkStoppageEvent(state: AppState, eventId: string): AppState 
       e.id === eventId ? { ...e, stoppageGroupId: null } : e,
     ),
   }
+}
+
+// --- Phase 2 v0.1: goals ---
+// Score is derived from goalEvents (matchRecord.deriveScore) — never stored.
+
+export interface GoalDraft {
+  teamId: TeamId
+  scorerNumber: number | null
+  ownGoal: boolean
+  ownGoalByNumber: number | null
+}
+
+function normalizeGoalDraft(draft: GoalDraft): Pick<GoalEvent, 'scorerNumber' | 'ownGoal' | 'ownGoalByNumber'> {
+  // An own goal has no "our" scorer number; a normal goal has no opponent number.
+  return draft.ownGoal
+    ? { scorerNumber: null, ownGoal: true, ownGoalByNumber: draft.ownGoalByNumber }
+    : { scorerNumber: draft.scorerNumber, ownGoal: false, ownGoalByNumber: null }
+}
+
+export function recordGoal(state: AppState, draft: GoalDraft, phase: RecordablePhase, elapsedMs: number): AppState {
+  const goal: GoalEvent = {
+    id: generateEventId(),
+    phase,
+    elapsedMs,
+    teamId: draft.teamId,
+    ...normalizeGoalDraft(draft),
+  }
+  return { ...state, goalEvents: [...state.goalEvents, goal] }
+}
+
+// Edits the recorded facts (team / scorer / own-goal), keeping the original
+// recorded time and phase.
+export function updateGoalEvent(state: AppState, id: string, draft: GoalDraft): AppState {
+  return {
+    ...state,
+    goalEvents: state.goalEvents.map((g) =>
+      g.id === id ? { ...g, teamId: draft.teamId, ...normalizeGoalDraft(draft) } : g,
+    ),
+  }
+}
+
+export function deleteGoalEvent(state: AppState, id: string): AppState {
+  return { ...state, goalEvents: state.goalEvents.filter((g) => g.id !== id) }
+}
+
+// --- Phase 2 v0.1: cards ---
+
+export interface CardDraft {
+  teamId: TeamId
+  card: CardKind
+  targetType: 'PLAYER' | 'OFFICIAL'
+  playerNumber: number | null
+  officialRole: TeamOfficialRole | null
+  officialName: string
+}
+
+function normalizeCardDraft(
+  draft: CardDraft,
+): Pick<CardEvent, 'card' | 'targetType' | 'playerNumber' | 'officialRole' | 'officialName'> {
+  return draft.targetType === 'PLAYER'
+    ? {
+        card: draft.card,
+        targetType: 'PLAYER',
+        playerNumber: draft.playerNumber,
+        officialRole: null,
+        officialName: '',
+      }
+    : {
+        card: draft.card,
+        targetType: 'OFFICIAL',
+        playerNumber: null,
+        officialRole: draft.officialRole,
+        officialName: draft.officialName.trim(),
+      }
+}
+
+export function recordCard(state: AppState, draft: CardDraft, phase: RecordablePhase, elapsedMs: number): AppState {
+  const card: CardEvent = {
+    id: generateEventId(),
+    phase,
+    elapsedMs,
+    teamId: draft.teamId,
+    ...normalizeCardDraft(draft),
+  }
+  return { ...state, cardEvents: [...state.cardEvents, card] }
+}
+
+export function updateCardEvent(state: AppState, id: string, draft: CardDraft): AppState {
+  return {
+    ...state,
+    cardEvents: state.cardEvents.map((c) =>
+      c.id === id ? { ...c, teamId: draft.teamId, ...normalizeCardDraft(draft) } : c,
+    ),
+  }
+}
+
+export function deleteCardEvent(state: AppState, id: string): AppState {
+  return { ...state, cardEvents: state.cardEvents.filter((c) => c.id !== id) }
 }

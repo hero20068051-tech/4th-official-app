@@ -6,16 +6,22 @@ import type { HalfKey } from './domain/matchTypes'
 import {
   addDraftPair,
   addPlayers,
+  type CardDraft,
   clearDraft,
   confirmDraft,
   correctHalfStart,
   createInitialAppState,
+  deleteCardEvent,
+  deleteGoalEvent,
   deleteSubstitutionEvent,
   endFirstHalfPhase,
   endHydrationPausePhase,
   endMatchPhase,
+  type GoalDraft,
   linkToNearestOpposingEvent,
   markHydrationCompleted,
+  recordCard,
+  recordGoal,
   removeDraftPair,
   removePlayer,
   setDraftPair,
@@ -25,11 +31,13 @@ import {
   startHydrationPausePhase,
   startSecondHalfPhase,
   unlinkStoppageEvent,
+  updateCardEvent,
+  updateGoalEvent,
   updateSettings,
   updateSubstitutionEventPairs,
 } from './domain/matchStore'
 import { clearMatchState, loadMatchState, saveMatchState } from './domain/persistence'
-import type { TeamId } from './domain/types'
+import type { RecordablePhase, TeamId } from './domain/types'
 
 function App() {
   const [savedState] = useState(() => loadMatchState())
@@ -125,7 +133,17 @@ function App() {
       }
       onLinkStoppage={(eventId) => setState((s) => linkToNearestOpposingEvent(s, eventId))}
       onUnlinkStoppage={(eventId) => setState((s) => unlinkStoppageEvent(s, eventId))}
-      onMarkHydrationCompleted={(half) => setState((s) => markHydrationCompleted(s, half))}
+      onMarkHydrationCompleted={(half, elapsedMs) => setState((s) => markHydrationCompleted(s, half, elapsedMs))}
+      onRecordGoal={(draft: GoalDraft, phase: RecordablePhase, elapsedMs: number) =>
+        setState((s) => recordGoal(s, draft, phase, elapsedMs))
+      }
+      onUpdateGoal={(goalId, draft) => setState((s) => updateGoalEvent(s, goalId, draft))}
+      onDeleteGoal={(goalId) => setState((s) => deleteGoalEvent(s, goalId))}
+      onRecordCard={(draft: CardDraft, phase: RecordablePhase, elapsedMs: number) =>
+        setState((s) => recordCard(s, draft, phase, elapsedMs))
+      }
+      onUpdateCard={(cardId, draft) => setState((s) => updateCardEvent(s, cardId, draft))}
+      onDeleteCard={(cardId) => setState((s) => deleteCardEvent(s, cardId))}
       onStartNewMatch={() => {
         clearMatchState()
         setState(createInitialAppState())

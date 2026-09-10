@@ -23,10 +23,20 @@ export function loadMatchState(): AppState | null {
     if (!parsed || typeof parsed !== 'object' || !parsed.phase || !Array.isArray(parsed.roster)) {
       return null
     }
-    // A match saved before hydrationCompletedByHalf existed won't have it —
-    // default it rather than letting a resume crash on the missing field.
+    // Matches saved by an earlier version won't have every field. Default
+    // each missing one so a resume never crashes and Phase 1 data keeps
+    // working unchanged.
     if (!parsed.hydrationCompletedByHalf) {
       parsed.hydrationCompletedByHalf = { firstHalf: false, secondHalf: false }
+    }
+    if (!parsed.hydrationCompletionElapsedMsByHalf) {
+      parsed.hydrationCompletionElapsedMsByHalf = { firstHalf: null, secondHalf: null }
+    }
+    if (!Array.isArray(parsed.goalEvents)) {
+      parsed.goalEvents = []
+    }
+    if (!Array.isArray(parsed.cardEvents)) {
+      parsed.cardEvents = []
     }
     return parsed as AppState
   } catch {

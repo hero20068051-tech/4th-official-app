@@ -1,17 +1,22 @@
 import { describe, expect, it } from 'vitest'
 import { computeElapsedMs } from './clock'
+import { deriveScore } from './matchRecord'
 import {
   addDraftPair,
   addPlayers,
   clearDraft,
   confirmDraft,
   createInitialAppState,
+  deleteCardEvent,
+  deleteGoalEvent,
   deleteSubstitutionEvent,
   endFirstHalfPhase,
   endHydrationPausePhase,
   getDerivedMatchState,
   linkToNearestOpposingEvent,
   markHydrationCompleted,
+  recordCard,
+  recordGoal,
   removeDraftPair,
   removePlayer,
   setDraftPair,
@@ -20,6 +25,8 @@ import {
   startHydrationPausePhase,
   startSecondHalfPhase,
   unlinkStoppageEvent,
+  updateCardEvent,
+  updateGoalEvent,
   updateSettings,
   updateSubstitutionEventPairs,
 } from './matchStore'
@@ -321,6 +328,125 @@ describe('hydration completion (independent of the clock and per-half)', () => {
 
     expect(state.hydrationCompletedByHalf.firstHalf).toBe(true)
     expect(state.hydrationCompletedByHalf.secondHalf).toBe(false)
+  })
+})
+
+describe('Phase 2 v0.1: goals do not touch the substitution engine', () => {
+  const g = { teamId: 'HOME' as const, scorerNumber: 10, ownGoal: false, ownGoalByNumber: null }
+
+  it('records a goal and the score is derived from the event list', () => {
+    let state = startedMatch()
+    state = recordGoal(state, g, 'FIRST_HALF', 5 * 60_000)
+    state = recordGoal(state, { ...g, teamId: 'AWAY', scorerNumber: 7 }, 'FIRST_HALF', 12 * 60_000)
+    expect(state.goalEvents).toHaveLength(2)
+    expect(deriveScore(state.goalEvents)).toEqual({ HOME: 1, AWAY: 1 })
+    // The substitution state is completely untouched by a goal.
+    expect(getDerivedMatchState(state).state.players['HOME:10'].location).toBe('pitch')
+  })
+
+  it('supports 得点者未確認 and later editing the scorer', () => {
+    let state = startedMatch()
+    state = recordGoal(state, { ...g, scorerNumber: null }, 'FIRST_HALF', 3 * 60_000)
+    const id = state.goalEvents[0].id
+    expect(state.goalEvents[0].scorerNumber).toBeNull()
+    expect(deriveScore(state.goalEvents)).toEqual({ HOME: 1, AWAY: 0 })
+
+    state = updateGoalEvent(state, id, { ...g, scorerNumber: 10 })
+    expect(state.goalEvents[0].scorerNumber).toBe(10)
+  })
+
+  it('records an own goal credited to the beneficiary, with an optional opponent number', () => {
+    let state = startedMatch()
+    state = recordGoal(state, { teamId: 'HOME', scorerNumber: 99, ownGoal: true, ownGoalByNumber: 4 }, 'SECOND_HALF', 18 * 60_000)
+    const og = state.goalEvents[0]
+    expect(og.ownGoal).toBe(true)
+    expect(og.scorerNumber).toBeNull() // an own goal has no "our" scorer
+    expect(og.ownGoalByNumber).toBe(4)
+    expect(deriveScore(state.goalEvents)).toEqual({ HOME: 1, AWAY: 0 })
+  })
+
+  it('deleting a goal recalculates the score', () => {
+    let state = startedMatch()
+    state = recordGoal(state, g, 'FIRST_HALF', 5 * 60_000)
+    state = recordGoal(state, g, 'SECOND_HALF', 5 * 60_000)
+    expect(deriveScore(state.goalEvents)).toEqual({ HOME: 2, AWAY: 0 })
+    state = deleteGoalEvent(state, state.goalEvents[0].id)
+    expect(deriveScore(state.goalEvents)).toEqual({ HOME: 1, AWAY: 0 })
+  })
+})
+
+describe('Phase 2 v0.1: cards do not touch the substitution engine', () => {
+  const yellow = {
+    teamId: 'HOME' as const,
+    card: 'YELLOW' as const,
+    targetType: 'PLAYER' as const,
+    playerNumber: 6,
+    officialRole: null,
+    officialName: '',
+  }
+
+  it('records a player yellow without affecting substitution state', () => {
+    let state = startedMatch()
+    state = recordCard(state, yellow, 'FIRST_HALF', 21 * 60_000)
+    expect(state.cardEvents).toHaveLength(1)
+    expect(getDerivedMatchState(state).state.players['HOME:6']?.location ?? 'pitch').toBe('pitch')
+  })
+
+  it('records a red card with no effect on the 9/3/3 counters or reentry', () => {
+    let state = startedMatch()
+    state = endFirstHalfPhase(state, 1_800_000)
+    state = startSecondHalfPhase(state, 1_800_000)
+    state = recordCard(state, { ...yellow, card: 'RED', playerNumber: 3 }, 'SECOND_HALF', 27 * 60_000)
+    const derived = getDerivedMatchState(state)
+    expect(derived.state.teamCounters.HOME.secondHalfOpportunitiesUsed).toBe(0)
+    expect(derived.state.teamCounters.HOME.reentryPlayerIds).toEqual([])
+  })
+
+  it('records a team official card with role and optional name', () => {
+    let state = startedMatch()
+    state = recordCard(
+      state,
+      { teamId: 'AWAY', card: 'YELLOW', targetType: 'OFFICIAL', playerNumber: null, officialRole: 'MANAGER', officialName: ' 山田 ' },
+      'SECOND_HALF',
+      35 * 60_000,
+    )
+    const c = state.cardEvents[0]
+    expect(c.targetType).toBe('OFFICIAL')
+    expect(c.officialRole).toBe('MANAGER')
+    expect(c.officialName).toBe('山田') // trimmed
+    expect(c.playerNumber).toBeNull()
+  })
+
+  it('editing then deleting a card leaves the list consistent', () => {
+    let state = startedMatch()
+    state = recordCard(state, yellow, 'FIRST_HALF', 10 * 60_000)
+    const id = state.cardEvents[0].id
+    state = updateCardEvent(state, id, { ...yellow, card: 'RED' })
+    expect(state.cardEvents[0].card).toBe('RED')
+    state = deleteCardEvent(state, id)
+    expect(state.cardEvents).toHaveLength(0)
+  })
+})
+
+describe('hydration completion records a timeline elapsed time', () => {
+  it('RUNNING_CLOCK: markHydrationCompleted stores the given elapsed once', () => {
+    let state = createInitialAppState()
+    state = updateSettings(state, { hydrationMode: 'RUNNING_CLOCK' })
+    state = startFirstHalfPhase(state, 0)
+    state = markHydrationCompleted(state, 'firstHalf', 5 * 60_000)
+    expect(state.hydrationCompletionElapsedMsByHalf.firstHalf).toBe(5 * 60_000)
+    // A second call does not overwrite the first hydration time.
+    state = markHydrationCompleted(state, 'firstHalf', 9 * 60_000)
+    expect(state.hydrationCompletionElapsedMsByHalf.firstHalf).toBe(5 * 60_000)
+  })
+
+  it('STOP_CLOCK: ending the pause records the elapsed at pause start', () => {
+    let state = createInitialAppState()
+    state = updateSettings(state, { hydrationMode: 'STOP_CLOCK' })
+    state = startFirstHalfPhase(state, 0)
+    state = startHydrationPausePhase(state, 10 * 60_000)
+    state = endHydrationPausePhase(state, 12 * 60_000)
+    expect(state.hydrationCompletionElapsedMsByHalf.firstHalf).toBe(10 * 60_000)
   })
 })
 
