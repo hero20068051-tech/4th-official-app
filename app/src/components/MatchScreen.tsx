@@ -15,7 +15,13 @@ import {
   parseHydrationTargetMinutes,
 } from '../domain/matchSetup'
 import type { HalfKey } from '../domain/matchTypes'
-import { type AppState, type CardDraft, type GoalDraft, getDerivedMatchState } from '../domain/matchStore'
+import {
+  type AppState,
+  type CardDraft,
+  type GoalDraft,
+  type GoalTimeEdit,
+  getDerivedMatchState,
+} from '../domain/matchStore'
 import type { RecordablePhase, SubstitutionPair, SubstitutionPhase, TeamId } from '../domain/types'
 import { useNow } from '../hooks/useNow'
 import { CardEntryPanel } from './CardEntryPanel'
@@ -52,7 +58,7 @@ interface MatchScreenProps {
   onUnlinkStoppage: (eventId: string) => void
   onMarkHydrationCompleted: (half: HalfKey, elapsedMs: number) => void
   onRecordGoal: (draft: GoalDraft, phase: RecordablePhase, elapsedMs: number) => void
-  onUpdateGoal: (goalId: string, draft: GoalDraft) => void
+  onUpdateGoal: (goalId: string, draft: GoalDraft, time?: GoalTimeEdit) => void
   onDeleteGoal: (goalId: string) => void
   onRecordCard: (draft: CardDraft, phase: RecordablePhase, elapsedMs: number) => void
   onUpdateCard: (cardId: string, draft: CardDraft) => void

@@ -375,6 +375,64 @@ describe('Phase 2 v0.1: goals do not touch the substitution engine', () => {
   })
 })
 
+describe('Phase 2.1: goal recorded-time can be corrected after the fact', () => {
+  const g = { teamId: 'HOME' as const, scorerNumber: 10, ownGoal: false, ownGoalByNumber: null }
+
+  it('leaves phase/elapsedMs untouched when no time is given (existing 3-arg callers)', () => {
+    let state = startedMatch()
+    state = recordGoal(state, g, 'FIRST_HALF', 5 * 60_000)
+    const id = state.goalEvents[0].id
+    state = updateGoalEvent(state, id, { ...g, scorerNumber: 7 })
+    expect(state.goalEvents[0]).toMatchObject({ phase: 'FIRST_HALF', elapsedMs: 5 * 60_000, scorerNumber: 7 })
+  })
+
+  it('corrects a same-half timing slip (12:35 entered as 13:10)', () => {
+    let state = startedMatch()
+    state = recordGoal(state, g, 'FIRST_HALF', (13 * 60 + 10) * 1000)
+    const id = state.goalEvents[0].id
+    state = updateGoalEvent(state, id, g, { phase: 'FIRST_HALF', elapsedMs: (12 * 60 + 35) * 1000 })
+    expect(state.goalEvents[0].elapsedMs).toBe((12 * 60 + 35) * 1000)
+    expect(deriveScore(state.goalEvents)).toEqual({ HOME: 1, AWAY: 0 }) // score unaffected
+  })
+
+  it('can move a goal to the other half, and the timeline re-derives its position automatically', () => {
+    let state = startedMatch()
+    state = recordGoal(state, g, 'SECOND_HALF', 2 * 60_000) // mistakenly logged as 2nd half
+    const id = state.goalEvents[0].id
+    state = updateGoalEvent(state, id, g, { phase: 'FIRST_HALF', elapsedMs: 40 * 60_000 })
+    expect(state.goalEvents[0]).toMatchObject({ phase: 'FIRST_HALF', elapsedMs: 40 * 60_000 })
+  })
+
+  it('changing the scorer and the time in the same edit both take effect', () => {
+    let state = startedMatch()
+    state = recordGoal(state, { ...g, scorerNumber: null }, 'FIRST_HALF', 5 * 60_000)
+    const id = state.goalEvents[0].id
+    state = updateGoalEvent(state, id, { ...g, scorerNumber: 9 }, { phase: 'FIRST_HALF', elapsedMs: 6 * 60_000 })
+    expect(state.goalEvents[0]).toMatchObject({ scorerNumber: 9, elapsedMs: 6 * 60_000 })
+  })
+
+  it('editing the time of an own goal keeps the own-goal fields intact', () => {
+    let state = startedMatch()
+    state = recordGoal(state, { teamId: 'HOME', scorerNumber: 99, ownGoal: true, ownGoalByNumber: 4 }, 'SECOND_HALF', 18 * 60_000)
+    const id = state.goalEvents[0].id
+    state = updateGoalEvent(
+      state,
+      id,
+      { teamId: 'HOME', scorerNumber: 99, ownGoal: true, ownGoalByNumber: 4 },
+      { phase: 'SECOND_HALF', elapsedMs: 19 * 60_000 },
+    )
+    expect(state.goalEvents[0]).toMatchObject({ ownGoal: true, ownGoalByNumber: 4, elapsedMs: 19 * 60_000 })
+  })
+
+  it('editing the time of an 得点者未確認 goal keeps it unconfirmed', () => {
+    let state = startedMatch()
+    state = recordGoal(state, { ...g, scorerNumber: null }, 'FIRST_HALF', 5 * 60_000)
+    const id = state.goalEvents[0].id
+    state = updateGoalEvent(state, id, { ...g, scorerNumber: null }, { phase: 'FIRST_HALF', elapsedMs: 6 * 60_000 })
+    expect(state.goalEvents[0]).toMatchObject({ scorerNumber: null, elapsedMs: 6 * 60_000 })
+  })
+})
+
 describe('Phase 2 v0.1: cards do not touch the substitution engine', () => {
   const yellow = {
     teamId: 'HOME' as const,

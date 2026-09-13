@@ -461,13 +461,24 @@ export function recordGoal(state: AppState, draft: GoalDraft, phase: RecordableP
   return { ...state, goalEvents: [...state.goalEvents, goal] }
 }
 
-// Edits the recorded facts (team / scorer / own-goal), keeping the original
-// recorded time and phase.
-export function updateGoalEvent(state: AppState, id: string, draft: GoalDraft): AppState {
+// Phase 2.1: the recorded time can also be corrected — a goal isn't always
+// entered the instant it happens. `time` is optional so existing callers
+// that only fix the team/scorer/own-goal keep working unchanged; when given,
+// it replaces phase + elapsedMs. The timeline re-derives its order from
+// these on every read (matchRecord.buildTimeline), so no separate re-sort
+// step is needed — correcting the time here is enough.
+export interface GoalTimeEdit {
+  phase: RecordablePhase
+  elapsedMs: number
+}
+
+export function updateGoalEvent(state: AppState, id: string, draft: GoalDraft, time?: GoalTimeEdit): AppState {
   return {
     ...state,
     goalEvents: state.goalEvents.map((g) =>
-      g.id === id ? { ...g, teamId: draft.teamId, ...normalizeGoalDraft(draft) } : g,
+      g.id === id
+        ? { ...g, teamId: draft.teamId, ...normalizeGoalDraft(draft), ...(time ?? {}) }
+        : g,
     ),
   }
 }

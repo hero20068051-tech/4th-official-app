@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Player, TeamId } from '../domain/types'
+import { VoiceRosterEntry } from './VoiceRosterEntry'
 
 const ERROR_DISPLAY_MS = 4000
 
@@ -24,6 +25,7 @@ export function TeamRosterEditor({
 }: TeamRosterEditorProps) {
   const [input, setInput] = useState('')
   const [errors, setErrors] = useState<string[]>([])
+  const [voiceEntryOpen, setVoiceEntryOpen] = useState(false)
 
   const sorted = [...players].sort((a, b) => a.number - b.number)
   const starterCount = players.filter((p) => p.isStarter).length
@@ -93,6 +95,17 @@ export function TeamRosterEditor({
             <li key={e}>{e}</li>
           ))}
         </ul>
+      )}
+
+      <button
+        type="button"
+        onClick={() => setVoiceEntryOpen((open) => !open)}
+        className="mt-2 text-sm font-medium text-blue-700 underline underline-offset-2"
+      >
+        🎤 音声でまとめて登録
+      </button>
+      {voiceEntryOpen && (
+        <VoiceRosterEntry teamId={teamId} onAddPlayers={onAddPlayers} onClose={() => setVoiceEntryOpen(false)} />
       )}
 
       <ul className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">

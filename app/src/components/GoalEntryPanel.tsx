@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import type { GoalDraft } from '../domain/matchStore'
-import type { GoalEvent, Player, TeamId } from '../domain/types'
+import { parseElapsedInput } from '../domain/clock'
+import type { GoalDraft, GoalTimeEdit } from '../domain/matchStore'
+import type { GoalEvent, Player, RecordablePhase, TeamId } from '../domain/types'
 import { TeamDot } from './TeamBadge'
 
 interface GoalEntryPanelProps {
@@ -9,7 +10,7 @@ interface GoalEntryPanelProps {
   awayName: string
   initial?: GoalEvent
   submitLabel: string
-  onSubmit: (draft: GoalDraft) => void
+  onSubmit: (draft: GoalDraft, time?: GoalTimeEdit) => void
   onCancel: () => void
 }
 
@@ -18,6 +19,10 @@ type Selection =
   | { kind: 'scorer'; number: number }
   | { kind: 'unknown' }
   | { kind: 'og'; number: number | null }
+
+// Goals can only happen while the ball is in play, so editing a goal's time
+// only ever moves it within 前半/後半 — never to ハーフタイム/試合終了後.
+type GoalHalf = Extract<RecordablePhase, 'FIRST_HALF' | 'SECOND_HALF'>
 
 function selectionFromGoal(goal: GoalEvent): Selection {
   if (goal.ownGoal) return { kind: 'og', number: goal.ownGoalByNumber }
@@ -36,17 +41,48 @@ export function GoalEntryPanel({ roster, homeName, awayName, initial, submitLabe
   const [team, setTeam] = useState<TeamId | null>(initial ? initial.teamId : null)
   const [selection, setSelection] = useState<Selection>(initial ? selectionFromGoal(initial) : { kind: 'none' })
 
+  // Time-of-recording fields — only rendered (and only ever read) in edit
+  // mode. Pre-filled from the existing event so leaving them untouched is a
+  // no-op.
+  const [goalHalf, setGoalHalf] = useState<GoalHalf>(
+    initial && initial.phase === 'SECOND_HALF' ? 'SECOND_HALF' : 'FIRST_HALF',
+  )
+  const [minutesText, setMinutesText] = useState(initial ? String(Math.floor(initial.elapsedMs / 60_000)) : '')
+  const [secondsText, setSecondsText] = useState(
+    initial ? String(Math.floor((initial.elapsedMs % 60_000) / 1000)) : '',
+  )
+  const [timeError, setTimeError] = useState<string | null>(null)
+
   const otherTeam: TeamId | null = team === 'HOME' ? 'AWAY' : team === 'AWAY' ? 'HOME' : null
   const canConfirm = team !== null && selection.kind !== 'none'
 
   function handleConfirm() {
     if (team === null || selection.kind === 'none') return
-    onSubmit({
+    const draft: GoalDraft = {
       teamId: team,
       scorerNumber: selection.kind === 'scorer' ? selection.number : null,
       ownGoal: selection.kind === 'og',
       ownGoalByNumber: selection.kind === 'og' ? selection.number : null,
-    })
+    }
+
+    if (!initial) {
+      onSubmit(draft)
+      return
+    }
+
+    // Edit mode: also validate the (possibly changed) recorded time. Reuses
+    // the exact same "m:s" parser and 180-minute safety cap as the half
+    // start-time correction — separate 分/秒 fields because Android's
+    // numeric keypad has no ":" key.
+    const m = minutesText.trim() === '' ? '0' : minutesText.trim()
+    const s = secondsText.trim() === '' ? '0' : secondsText.trim()
+    const result = parseElapsedInput(`${m}:${s}`)
+    if (!result.ok) {
+      setTimeError(result.error)
+      return
+    }
+    setTimeError(null)
+    onSubmit(draft, { phase: goalHalf, elapsedMs: result.ms })
   }
 
   return (
@@ -162,6 +198,50 @@ export function GoalEntryPanel({ roster, homeName, awayName, initial, submitLabe
             </div>
           )}
         </>
+      )}
+
+      {initial && (
+        <div className="mt-4 border-t border-gray-100 pt-3">
+          <p className="text-xs font-medium text-gray-500">記録した時間</p>
+          <div className="mt-1 flex gap-2">
+            {(['FIRST_HALF', 'SECOND_HALF'] as const).map((h) => (
+              <button
+                key={h}
+                type="button"
+                onClick={() => setGoalHalf(h)}
+                className={`rounded-lg border px-3 py-2 text-sm font-medium ${
+                  goalHalf === h ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-300 text-gray-700'
+                }`}
+              >
+                {h === 'FIRST_HALF' ? '前半' : '後半'}
+              </button>
+            ))}
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              value={minutesText}
+              onChange={(e) => setMinutesText(e.target.value)}
+              placeholder="2"
+              className="w-16 rounded border border-gray-300 px-2 py-1 text-center"
+            />
+            <span className="text-sm">分</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              max={59}
+              value={secondsText}
+              onChange={(e) => setSecondsText(e.target.value)}
+              placeholder="00"
+              className="w-16 rounded border border-gray-300 px-2 py-1 text-center"
+            />
+            <span className="text-sm">秒</span>
+          </div>
+          {timeError && <p className="mt-1 text-sm font-medium text-red-600">{timeError}</p>}
+        </div>
       )}
 
       <button

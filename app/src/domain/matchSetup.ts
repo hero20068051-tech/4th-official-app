@@ -70,6 +70,35 @@ export function findDuplicateNumbers(existing: number[], incoming: number[]): nu
   return incoming.filter((n) => existingSet.has(n)).sort((a, b) => a - b)
 }
 
+// Phase 2.1 voice roster entry: speech-to-text dictation of a roster commonly
+// renders each number with a trailing "番" (e.g. "1番、2番、3番"). Stripping
+// it before handing off to the existing parser means voice transcripts are
+// validated by the exact same rules as manual bulk entry (range, duplicates,
+// unrecognized tokens) — no separate parsing/validation path to keep in sync.
+export function parseNumberListFromTranscript(input: string): ParsedNumberList {
+  return parseNumberList(input.replace(/番/g, ''))
+}
+
+export interface VoiceRosterComparison {
+  matched: boolean
+  agreed: number[]
+  onlyInFirst: number[]
+  onlyInSecond: number[]
+}
+
+// Compares two independent voice-dictated readings of the same roster sheet.
+// Reading order never matters — jersey numbers are unordered identifiers
+// here, never a sequence (03_PHASE1_SCOPE.md: "背番号は…連番を前提にしない
+// …数値順で表示"), so this is a set comparison, not a positional one.
+export function compareVoiceRosterTakes(first: number[], second: number[]): VoiceRosterComparison {
+  const firstSet = new Set(first)
+  const secondSet = new Set(second)
+  const onlyInFirst = first.filter((n) => !secondSet.has(n)).sort((a, b) => a - b)
+  const onlyInSecond = second.filter((n) => !firstSet.has(n)).sort((a, b) => a - b)
+  const agreed = first.filter((n) => secondSet.has(n)).sort((a, b) => a - b)
+  return { matched: onlyInFirst.length === 0 && onlyInSecond.length === 0, agreed, onlyInFirst, onlyInSecond }
+}
+
 export type StartEligibility =
   | { level: 'OK' }
   | { level: 'WARN'; message: string }

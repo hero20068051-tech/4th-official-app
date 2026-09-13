@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { buildTimeline, formatTimelineMoment, playerYellowOrdinal } from '../domain/matchRecord'
 import type { ClockState, HalfKey } from '../domain/matchTypes'
-import type { CardDraft, GoalDraft } from '../domain/matchStore'
+import type { CardDraft, GoalDraft, GoalTimeEdit } from '../domain/matchStore'
 import type {
   CardEvent,
   GoalEvent,
@@ -36,7 +36,7 @@ interface MatchTimelineProps {
   onUpdateSubstitutionPairs: (eventId: string, pairs: SubstitutionPair[]) => void
   onLinkStoppage: (eventId: string) => void
   onUnlinkStoppage: (eventId: string) => void
-  onEditGoal: (goalId: string, draft: GoalDraft) => void
+  onEditGoal: (goalId: string, draft: GoalDraft, time?: GoalTimeEdit) => void
   onDeleteGoal: (goalId: string) => void
   onEditCard: (cardId: string, draft: CardDraft) => void
   onDeleteCard: (cardId: string) => void
@@ -93,7 +93,7 @@ export function MatchTimeline(props: MatchTimelineProps) {
                   goal={entry.goal}
                   roster={roster}
                   teamLabels={teamLabels}
-                  onSave={(draft) => props.onEditGoal(entry.goal.id, draft)}
+                  onSave={(draft, time) => props.onEditGoal(entry.goal.id, draft, time)}
                   onDelete={() => props.onDeleteGoal(entry.goal.id)}
                 />
               </li>
@@ -201,7 +201,7 @@ function GoalRow({
   goal: GoalEvent
   roster: Player[]
   teamLabels: Record<TeamId, string>
-  onSave: (draft: GoalDraft) => void
+  onSave: (draft: GoalDraft, time?: GoalTimeEdit) => void
   onDelete: () => void
 }) {
   const [mode, setMode] = useState<'view' | 'confirmDelete' | 'edit'>('view')
@@ -214,8 +214,8 @@ function GoalRow({
         awayName={teamLabels.AWAY}
         initial={goal}
         submitLabel="保存"
-        onSubmit={(draft) => {
-          onSave(draft)
+        onSubmit={(draft, time) => {
+          onSave(draft, time)
           setMode('view')
         }}
         onCancel={() => setMode('view')}

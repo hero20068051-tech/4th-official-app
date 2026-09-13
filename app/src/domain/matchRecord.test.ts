@@ -104,6 +104,28 @@ describe('buildTimeline', () => {
     expect(entries.map((e) => e.key)).toEqual(['g1', 'c1', 's1', 'g2'])
   })
 
+  it('re-sorts automatically when a goal event is edited to a new time (no separate re-order step needed)', () => {
+    const build = (g1ElapsedMs: number, g1Phase: 'FIRST_HALF' | 'SECOND_HALF') =>
+      buildTimeline({
+        substitutionEvents: [],
+        goalEvents: [
+          goal({ id: 'g1', phase: g1Phase, elapsedMs: g1ElapsedMs }),
+          goal({ id: 'g2', phase: 'FIRST_HALF', elapsedMs: 10 * 60_000 }),
+        ],
+        cardEvents: [],
+        clock: createInitialClockState(),
+        hydrationCompletionElapsedMsByHalf: noHydration,
+      })
+
+    // Before correction: g1 (13:10) comes after g2 (10:00).
+    expect(build(13 * 60_000 + 10_000, 'FIRST_HALF').map((e) => e.key)).toEqual(['g2', 'g1'])
+    // After correcting g1 to 05:00, it now comes first — simply because the
+    // stored elapsedMs changed; buildTimeline needs no extra "re-sort" call.
+    expect(build(5 * 60_000, 'FIRST_HALF').map((e) => e.key)).toEqual(['g1', 'g2'])
+    // Moving g1 to the second half moves it to the very end.
+    expect(build(1 * 60_000, 'SECOND_HALF').map((e) => e.key)).toEqual(['g2', 'g1'])
+  })
+
   it('places phase markers at their boundaries', () => {
     const clock = {
       ...createInitialClockState(),

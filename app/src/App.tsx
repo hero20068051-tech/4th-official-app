@@ -137,7 +137,7 @@ function App() {
       onRecordGoal={(draft: GoalDraft, phase: RecordablePhase, elapsedMs: number) =>
         setState((s) => recordGoal(s, draft, phase, elapsedMs))
       }
-      onUpdateGoal={(goalId, draft) => setState((s) => updateGoalEvent(s, goalId, draft))}
+      onUpdateGoal={(goalId, draft, time) => setState((s) => updateGoalEvent(s, goalId, draft, time))}
       onDeleteGoal={(goalId) => setState((s) => deleteGoalEvent(s, goalId))}
       onRecordCard={(draft: CardDraft, phase: RecordablePhase, elapsedMs: number) =>
         setState((s) => recordCard(s, draft, phase, elapsedMs))
