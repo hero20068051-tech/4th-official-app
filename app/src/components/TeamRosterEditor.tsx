@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Player, TeamId } from '../domain/types'
+import { PlayerNumberPicker } from './PlayerNumberPicker'
 import { VoiceRosterEntry } from './VoiceRosterEntry'
 
 const ERROR_DISPLAY_MS = 4000
@@ -26,6 +27,7 @@ export function TeamRosterEditor({
   const [input, setInput] = useState('')
   const [errors, setErrors] = useState<string[]>([])
   const [voiceEntryOpen, setVoiceEntryOpen] = useState(false)
+  const [otherEntryOpen, setOtherEntryOpen] = useState(false)
 
   const sorted = [...players].sort((a, b) => a.number - b.number)
   const starterCount = players.filter((p) => p.isStarter).length
@@ -72,40 +74,67 @@ export function TeamRosterEditor({
         </span>
       </h2>
 
-      <div className="mt-3 flex gap-2">
-        <input
-          type="text"
-          inputMode="numeric"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="背番号をまとめて入力 例: 1,2,3,10"
-          className="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-3 text-base"
-        />
-        <button
-          type="button"
-          onClick={handleAdd}
-          className="shrink-0 rounded-lg bg-gray-900 px-4 py-3 text-base font-medium text-white active:bg-gray-700"
-        >
-          追加
-        </button>
-      </div>
-      {errors.length > 0 && (
-        <ul className="mt-2 space-y-1 text-sm text-red-600">
-          {errors.map((e) => (
-            <li key={e}>{e}</li>
-          ))}
-        </ul>
-      )}
+      <p className="mt-3 text-sm font-medium text-gray-700">背番号を選択</p>
+      <PlayerNumberPicker
+        teamId={teamId}
+        existingNumbers={players.map((p) => p.number)}
+        onAddPlayers={onAddPlayers}
+      />
 
       <button
         type="button"
-        onClick={() => setVoiceEntryOpen((open) => !open)}
-        className="mt-2 text-sm font-medium text-blue-700 underline underline-offset-2"
+        onClick={() => setOtherEntryOpen((open) => !open)}
+        className="mt-3 text-sm font-medium text-gray-500 underline underline-offset-2"
       >
-        🎤 音声でまとめて登録
+        {otherEntryOpen ? '他の入力方法を閉じる' : 'その他の入力方法（手入力）'}
       </button>
-      {voiceEntryOpen && (
-        <VoiceRosterEntry teamId={teamId} onAddPlayers={onAddPlayers} onClose={() => setVoiceEntryOpen(false)} />
+
+      {otherEntryOpen && (
+        <div className="mt-2 rounded-lg border border-gray-200 p-3">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              inputMode="numeric"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="背番号をまとめて入力 例: 1 2 3,10"
+              className="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-3 text-base"
+            />
+            <button
+              type="button"
+              onClick={handleAdd}
+              className="shrink-0 rounded-lg bg-gray-900 px-4 py-3 text-base font-medium text-white active:bg-gray-700"
+            >
+              追加
+            </button>
+          </div>
+          <p className="mt-1 text-xs text-gray-400">
+            スペース・改行・「、」「,」のどれで区切っても構いません（例: 1 2 3,10）。
+          </p>
+          {errors.length > 0 && (
+            <ul className="mt-2 space-y-1 text-sm text-red-600">
+              {errors.map((e) => (
+                <li key={e}>{e}</li>
+              ))}
+            </ul>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setVoiceEntryOpen((open) => !open)}
+            className="mt-3 text-sm font-medium text-gray-400 underline underline-offset-2"
+          >
+            🧪 音声入力（実験的機能・推奨しません）
+          </button>
+          {voiceEntryOpen && (
+            <>
+              <p className="mt-1 text-xs text-amber-600">
+                実機での確認で、発声していない番号が誤って追加されるケースが確認されています。使用する場合は登録後に必ず一覧を目視確認してください。
+              </p>
+              <VoiceRosterEntry teamId={teamId} onAddPlayers={onAddPlayers} onClose={() => setVoiceEntryOpen(false)} />
+            </>
+          )}
+        </div>
       )}
 
       <ul className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">

@@ -43,6 +43,17 @@ describe('parseNumberList', () => {
     expect(parseNumberList('1 2 3 4 5')).toEqual({ numbers: expected, errors: [] })
   })
 
+  it('accepts newlines as a separator (Phase 2.1.1: one number per line)', () => {
+    expect(parseNumberList('1\n2\n3').numbers).toEqual([1, 2, 3])
+    expect(parseNumberList('1, 2\n3 4').numbers).toEqual([1, 2, 3, 4])
+  })
+
+  it('never guesses a split for unseparated digits (Phase 2.1.1: no separator = no split)', () => {
+    const { numbers, errors } = parseNumberList('123451519')
+    expect(numbers).toEqual([])
+    expect(errors[0]).toContain('範囲外')
+  })
+
   it('accepts full-width digits typed by an IME in full-width mode', () => {
     // "１，２，３" — full-width digits with a full-width comma, as an IME in
     // zenkaku mode commonly produces alongside "、"/"，".
