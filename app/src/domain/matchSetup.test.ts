@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  checkStartLineups,
   compareVoiceRosterTakes,
   evaluateStartEligibility,
   findDuplicateNumbers,
@@ -211,5 +212,34 @@ describe('isPastHydrationTarget', () => {
 
   it('is false before the target', () => {
     expect(isPastHydrationTarget(4 * 60_000, 5)).toBe(false)
+  })
+})
+
+describe('checkStartLineups (Phase 2.2)', () => {
+  it('11 starters on both teams starts normally with no extra confirmation', () => {
+    expect(checkStartLineups({ HOME: 11, AWAY: 11 })).toEqual({ level: 'OK' })
+  })
+
+  it.each([7, 8, 9, 10])('%i starters requires confirmation and names that team', (n) => {
+    expect(checkStartLineups({ HOME: n, AWAY: 11 })).toEqual({ level: 'CONFIRM', teams: [{ teamId: 'HOME', count: n }] })
+    expect(checkStartLineups({ HOME: 11, AWAY: n })).toEqual({ level: 'CONFIRM', teams: [{ teamId: 'AWAY', count: n }] })
+  })
+
+  it('lists both teams when both are short', () => {
+    expect(checkStartLineups({ HOME: 10, AWAY: 9 })).toEqual({
+      level: 'CONFIRM',
+      teams: [
+        { teamId: 'HOME', count: 10 },
+        { teamId: 'AWAY', count: 9 },
+      ],
+    })
+  })
+
+  it.each([0, 1, 6])('%i starters cannot start', (n) => {
+    expect(checkStartLineups({ HOME: n, AWAY: 11 })).toEqual({ level: 'BLOCK', teams: [{ teamId: 'HOME', count: n }] })
+  })
+
+  it('BLOCK wins over CONFIRM and lists only the blocked team', () => {
+    expect(checkStartLineups({ HOME: 10, AWAY: 6 })).toEqual({ level: 'BLOCK', teams: [{ teamId: 'AWAY', count: 6 }] })
   })
 })

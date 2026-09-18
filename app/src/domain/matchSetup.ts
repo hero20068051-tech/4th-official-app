@@ -1,4 +1,5 @@
 import type { HydrationMode, MatchSettings } from './matchTypes'
+import type { TeamId } from './types'
 
 export const MIN_NUMBER = 1
 export const MAX_NUMBER = 99
@@ -117,6 +118,32 @@ export function evaluateStartEligibility(starterCount: number): StartEligibility
       message: `先発が${starterCount}人です。この人数のまま開始しますか？`,
     }
   }
+  return { level: 'OK' }
+}
+
+export interface TeamStarterCount {
+  teamId: TeamId
+  count: number
+}
+
+export type StartLineupCheck =
+  | { level: 'OK' }
+  | { level: 'CONFIRM'; teams: TeamStarterCount[] }
+  | { level: 'BLOCK'; teams: TeamStarterCount[] }
+
+// Combines both teams' starter counts into the single decision the start
+// button needs (Phase 2.2). Thresholds come from evaluateStartEligibility so
+// the CONFIRMED 11 / 7-10 / 6-or-fewer rule lives in exactly one place.
+// BLOCK wins over CONFIRM; `teams` lists only the teams responsible.
+export function checkStartLineups(counts: Record<TeamId, number>): StartLineupCheck {
+  const entries: TeamStarterCount[] = (['HOME', 'AWAY'] as const).map((teamId) => ({
+    teamId,
+    count: counts[teamId],
+  }))
+  const blocked = entries.filter((e) => evaluateStartEligibility(e.count).level === 'BLOCK')
+  if (blocked.length > 0) return { level: 'BLOCK', teams: blocked }
+  const short = entries.filter((e) => evaluateStartEligibility(e.count).level === 'WARN')
+  if (short.length > 0) return { level: 'CONFIRM', teams: short }
   return { level: 'OK' }
 }
 

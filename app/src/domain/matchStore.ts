@@ -14,6 +14,7 @@ import {
   MAX_SQUAD_SIZE,
   MAX_STARTERS,
   defaultMatchSettings,
+  evaluateStartEligibility,
   findDuplicateNumbers,
   parseNumberList,
 } from './matchSetup'
@@ -180,6 +181,57 @@ export function setRegisteredGK(state: AppState, targetPlayerId: string, isRegis
 export function startFirstHalfPhase(state: AppState, now: number): AppState {
   if (state.phase !== 'PRE_MATCH') return state
   return { ...state, phase: 'FIRST_HALF', clock: startFirstHalf(state.clock, now) }
+}
+
+// Phase 2.2: fixing a starter typo after kickoff. This is NOT a substitution
+// edit — it rewrites the initial lineup (roster.isStarter) and never creates
+// an event. That is only coherent while that team's log is still empty:
+// replayMatch() rebuilds everything from roster + events, so with no events
+// the corrected lineup simply becomes the baseline for every later
+// substitution / re-entry judgment. Once the team has a confirmed
+// substitution, its history was built on the old lineup and editing is
+// refused. The check is per team (the engine keeps HOME/AWAY fully
+// independent), so one team's first substitution never locks the other.
+export function canCorrectStarters(state: AppState, teamId: TeamId): boolean {
+  const inMatch = state.phase === 'FIRST_HALF' || state.phase === 'HALF_TIME' || state.phase === 'SECOND_HALF'
+  if (!inMatch) return false
+  return !state.substitutionEvents.some((e) => e.teamGroups.some((g) => g.teamId === teamId))
+}
+
+export function correctStarters(state: AppState, teamId: TeamId, starterPlayerIds: string[]): SetStarterResult {
+  if (!canCorrectStarters(state, teamId)) {
+    const inMatch = state.phase === 'FIRST_HALF' || state.phase === 'HALF_TIME' || state.phase === 'SECOND_HALF'
+    return {
+      state,
+      errors: [
+        inMatch
+          ? '交代を確定済みのため、先発設定は修正できません'
+          : '今は先発設定を修正できません',
+      ],
+    }
+  }
+
+  const teamIds = new Set(state.roster.filter((p) => p.teamId === teamId).map((p) => p.id))
+  const chosen = new Set(starterPlayerIds)
+  if (chosen.size !== starterPlayerIds.length || starterPlayerIds.some((id) => !teamIds.has(id))) {
+    return { state, errors: ['先発に選べない選手が含まれています'] }
+  }
+  if (chosen.size > MAX_STARTERS) {
+    return { state, errors: [`先発は${MAX_STARTERS}人までです`] }
+  }
+  if (evaluateStartEligibility(chosen.size).level === 'BLOCK') {
+    return { state, errors: ['先発は7名以上必要です'] }
+  }
+
+  return {
+    state: {
+      ...state,
+      roster: state.roster.map((p) => (p.teamId === teamId ? { ...p, isStarter: chosen.has(p.id) } : p)),
+      // A half-built substitution refers to the old lineup; drop it.
+      drafts: { ...state.drafts, [teamId]: emptyDraft(teamId) },
+    },
+    errors: [],
+  }
 }
 
 export function endFirstHalfPhase(state: AppState, now: number): AppState {

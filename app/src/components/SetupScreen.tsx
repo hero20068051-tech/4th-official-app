@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { evaluateStartEligibility, HYDRATION_MODE_LABELS, isValidHalfLength } from '../domain/matchSetup'
+import { checkStartLineups, displayTeamName, HYDRATION_MODE_LABELS, isValidHalfLength } from '../domain/matchSetup'
 import type { HydrationMode, MatchSettings } from '../domain/matchTypes'
 import type { TeamId } from '../domain/types'
-import { ConfirmDialog } from './ConfirmDialog'
+import { StarterShortageDialog } from './StarterShortageDialog'
 import { TeamRosterEditor } from './TeamRosterEditor'
 import type { AppState } from '../domain/matchStore'
 
@@ -27,8 +27,9 @@ export function SetupScreen({
   onSetRegisteredGK,
   onStartMatch,
 }: SetupScreenProps) {
-  const [pendingWarning, setPendingWarning] = useState<string | null>(null)
-  const [blockMessage, setBlockMessage] = useState<string | null>(null)
+  const [lineupDialog, setLineupDialog] = useState<
+    { mode: 'CONFIRM' | 'BLOCK'; teams: { label: string; count: number }[] } | null
+  >(null)
   const [customHalfLength, setCustomHalfLength] = useState(
     HALF_LENGTH_PRESETS.includes(state.settings.halfLengthMinutes) ? '' : String(state.settings.halfLengthMinutes),
   )
@@ -41,22 +42,24 @@ export function SetupScreen({
   const awayPlayers = state.roster.filter((p) => p.teamId === 'AWAY')
 
   function handleStartClick() {
-    const homeEligibility = evaluateStartEligibility(homePlayers.filter((p) => p.isStarter).length)
-    const awayEligibility = evaluateStartEligibility(awayPlayers.filter((p) => p.isStarter).length)
-
-    const blocked = [homeEligibility, awayEligibility].find((e) => e.level === 'BLOCK')
-    if (blocked && blocked.level === 'BLOCK') {
-      setBlockMessage(blocked.message)
+    const check = checkStartLineups({
+      HOME: homePlayers.filter((p) => p.isStarter).length,
+      AWAY: awayPlayers.filter((p) => p.isStarter).length,
+    })
+    if (check.level === 'OK') {
+      onStartMatch()
       return
     }
-
-    const warning = [homeEligibility, awayEligibility].find((e) => e.level === 'WARN')
-    if (warning && warning.level === 'WARN') {
-      setPendingWarning(warning.message)
-      return
-    }
-
-    onStartMatch()
+    // 7-10 starters: never start straight away — a full-screen dialog makes
+    // the operator read the count first. 6 or fewer: the same dialog, with
+    // no way to proceed.
+    setLineupDialog({
+      mode: check.level,
+      teams: check.teams.map((t) => ({
+        label: displayTeamName(t.teamId === 'HOME' ? state.settings.homeTeamName : state.settings.awayTeamName, t.teamId),
+        count: t.count,
+      })),
+    })
   }
 
   return (
@@ -176,8 +179,6 @@ export function SetupScreen({
         onSetRegisteredGK={onSetRegisteredGK}
       />
 
-      {blockMessage && <p className="text-sm font-medium text-red-600">{blockMessage}</p>}
-
       <div className="fixed inset-x-0 bottom-0 z-10 border-t border-gray-200 bg-white p-4 will-change-transform">
         <button
           type="button"
@@ -188,16 +189,16 @@ export function SetupScreen({
         </button>
       </div>
 
-      {pendingWarning && (
-        <ConfirmDialog
-          title="人数の確認"
-          message={pendingWarning}
-          confirmLabel="開始する"
-          onConfirm={() => {
-            setPendingWarning(null)
+      {lineupDialog && (
+        <StarterShortageDialog
+          mode={lineupDialog.mode}
+          action="start"
+          teams={lineupDialog.teams}
+          onBack={() => setLineupDialog(null)}
+          onProceed={() => {
+            setLineupDialog(null)
             onStartMatch()
           }}
-          onCancel={() => setPendingWarning(null)}
         />
       )}
     </div>

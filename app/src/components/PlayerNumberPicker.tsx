@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { MAX_NUMBER, MAX_SQUAD_SIZE, MIN_NUMBER } from '../domain/matchSetup'
 import type { TeamId } from '../domain/types'
 
@@ -13,15 +13,14 @@ interface DecadeGroup {
   numbers: number[]
 }
 
-// 1-9, then 10-19, 20-29, ... 90-99 — every decade gets its own labeled
-// section so a long, spread-out roster (e.g. 1, 15, 38, 77, 99) stays easy to
-// scan, without forcing all 99 buttons onto one screen at a shrunken size.
+// 1-9, then 10-19, 20-29, ... 90-99. Only one group's buttons are on screen
+// at a time, so the picker stays short (no long page to scroll past, and the
+// start button is never far from an accidental thumb) while every number
+// from 1 to 99 remains reachable in two taps: range, then number.
 function buildDecades(): DecadeGroup[] {
-  const groups: DecadeGroup[] = []
-  // First group is 1-9 (the "ones" before the first full ten); every group
-  // after that is a plain ten (10-19, 20-29, ... 90-99), matching how people
-  // actually say "10番台" / "20番台".
-  groups.push({ label: `${MIN_NUMBER}〜9`, numbers: Array.from({ length: 9 }, (_, i) => MIN_NUMBER + i) })
+  const groups: DecadeGroup[] = [
+    { label: `${MIN_NUMBER}〜9`, numbers: Array.from({ length: 9 }, (_, i) => MIN_NUMBER + i) },
+  ]
   for (let start = 10; start <= MAX_NUMBER; start += 10) {
     const end = Math.min(start + 9, MAX_NUMBER)
     groups.push({ label: `${start}〜${end}`, numbers: Array.from({ length: end - start + 1 }, (_, i) => start + i) })
@@ -33,13 +32,14 @@ const DECADES = buildDecades()
 
 export function PlayerNumberPicker({ teamId, existingNumbers, onAddPlayers }: PlayerNumberPickerProps) {
   const [selected, setSelected] = useState<number[]>([])
+  const [rangeIndex, setRangeIndex] = useState(0)
   const [capError, setCapError] = useState<string | null>(null)
   const [addErrors, setAddErrors] = useState<string[]>([])
-  const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   const existingSet = new Set(existingNumbers)
   const selectedSet = new Set(selected)
   const sortedSelected = [...selected].sort((a, b) => a - b)
+  const range = DECADES[rangeIndex]
 
   function handleTap(n: number) {
     if (existingSet.has(n)) return
@@ -71,55 +71,60 @@ export function PlayerNumberPicker({ teamId, existingNumbers, onAddPlayers }: Pl
     setAddErrors(errors)
   }
 
-  function scrollToDecade(label: string) {
-    sectionRefs.current[label]?.scrollIntoView({ block: 'start' })
-  }
-
   return (
     <div className="mt-3 rounded-lg border border-gray-300 bg-white">
-      <div className="flex gap-1 overflow-x-auto border-b border-gray-200 bg-white p-2">
-        {DECADES.map((d) => (
-          <button
-            key={d.label}
-            type="button"
-            onClick={() => scrollToDecade(d.label)}
-            className="shrink-0 rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-600 active:bg-gray-100"
-          >
-            {d.label.split('〜')[0]}
-          </button>
-        ))}
+      <div className="grid grid-cols-5 gap-1 border-b border-gray-200 p-2">
+        {DECADES.map((d, i) => {
+          const pendingInRange = d.numbers.filter((n) => selectedSet.has(n)).length
+          return (
+            <button
+              key={d.label}
+              type="button"
+              onClick={() => setRangeIndex(i)}
+              aria-pressed={i === rangeIndex}
+              aria-label={`${d.label}番${pendingInRange > 0 ? `（選択${pendingInRange}名）` : ''}`}
+              className={`relative h-10 rounded-md border text-sm font-medium ${
+                i === rangeIndex
+                  ? 'border-gray-900 bg-gray-900 text-white'
+                  : 'border-gray-200 bg-white text-gray-600 active:bg-gray-100'
+              }`}
+            >
+              {d.label}
+              {pendingInRange > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-bold leading-none text-white">
+                  {pendingInRange}
+                </span>
+              )}
+            </button>
+          )
+        })}
       </div>
 
-      <div className="max-h-72 overflow-y-auto p-3">
-        {DECADES.map((d) => (
-          <div key={d.label} ref={(el) => { sectionRefs.current[d.label] = el }} className="mb-3 last:mb-0">
-            <p className="sticky top-0 mb-1 bg-white py-0.5 text-xs font-medium text-gray-400">{d.label}</p>
-            <div className="grid grid-cols-5 gap-2">
-              {d.numbers.map((n) => {
-                const isExisting = existingSet.has(n)
-                const isSelected = selectedSet.has(n)
-                return (
-                  <button
-                    key={n}
-                    type="button"
-                    disabled={isExisting}
-                    onClick={() => handleTap(n)}
-                    aria-label={isExisting ? `${n}番は登録済みです` : `${n}番を選択`}
-                    className={`h-12 rounded-lg border text-lg font-bold tabular-nums ${
-                      isExisting
-                        ? 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-300'
-                        : isSelected
-                          ? 'border-blue-600 bg-blue-600 text-white'
-                          : 'border-gray-300 bg-white text-gray-800 active:bg-gray-100'
-                    }`}
-                  >
-                    {isExisting ? '済' : n}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        ))}
+      <div className="p-3">
+        <div className="grid grid-cols-5 gap-2">
+          {range.numbers.map((n) => {
+            const isExisting = existingSet.has(n)
+            const isSelected = selectedSet.has(n)
+            return (
+              <button
+                key={n}
+                type="button"
+                disabled={isExisting}
+                onClick={() => handleTap(n)}
+                aria-label={isExisting ? `${n}番は登録済みです` : `${n}番を選択`}
+                className={`h-12 rounded-lg border text-lg font-bold tabular-nums ${
+                  isExisting
+                    ? 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-300'
+                    : isSelected
+                      ? 'border-blue-600 bg-blue-600 text-white'
+                      : 'border-gray-300 bg-white text-gray-800 active:bg-gray-100'
+                }`}
+              >
+                {isExisting ? '済' : n}
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       <div className="border-t border-gray-200 p-3">

@@ -10,6 +10,7 @@ import {
   clearDraft,
   confirmDraft,
   correctHalfStart,
+  correctStarters,
   createInitialAppState,
   deleteCardEvent,
   deleteGoalEvent,
@@ -116,6 +117,11 @@ function App() {
       onCorrectHalfStart={(half: HalfKey, correctedAt: number) =>
         setState((s) => correctHalfStart(s, half, correctedAt))
       }
+      onCorrectStarters={(teamId, starterIds) => {
+        const { state: next, errors } = correctStarters(state, teamId, starterIds)
+        if (errors.length === 0) setState(next)
+        return errors
+      }}
       onSetDraftPair={(teamId, pairIndex, role, playerId) =>
         setState((s) => setDraftPair(s, teamId, pairIndex, role, playerId))
       }

@@ -5,7 +5,9 @@ import {
   addDraftPair,
   addPlayers,
   clearDraft,
+  canCorrectStarters,
   confirmDraft,
+  correctStarters,
   createInitialAppState,
   deleteCardEvent,
   deleteGoalEvent,
@@ -521,5 +523,138 @@ describe('phase transitions drive the clock', () => {
     state = startFirstHalfPhase(state, 0)
     state = endFirstHalfPhase(state, 1_800_000)
     expect(state.phase).toBe('HALF_TIME')
+  })
+})
+
+describe('Phase 2.2: correcting starters after kickoff, before that team\'s first substitution', () => {
+  const ids = (nums: number[], team: 'HOME' | 'AWAY' = 'HOME') => nums.map((n) => `${team}:${n}`)
+  const starters = (state: ReturnType<typeof startedMatchWithBothTeams>, team: 'HOME' | 'AWAY') =>
+    state.roster.filter((p) => p.teamId === team && p.isStarter).map((p) => p.number).sort((a, b) => a - b)
+
+  it('is available mid-match with no substitution yet, and not in PRE_MATCH or FULL_TIME', () => {
+    const state = startedMatchWithBothTeams()
+    expect(canCorrectStarters(state, 'HOME')).toBe(true)
+    expect(canCorrectStarters(createInitialAppState(), 'HOME')).toBe(false)
+    expect(canCorrectStarters({ ...state, phase: 'FULL_TIME' }, 'HOME')).toBe(false)
+  })
+
+  it('swaps one starter for a bench player without creating any event', () => {
+    const state = startedMatchWithBothTeams()
+    const result = correctStarters(state, 'HOME', ids([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15]))
+    expect(result.errors).toEqual([])
+    expect(starters(result.state, 'HOME')).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15])
+    expect(result.state.substitutionEvents).toEqual([])
+    expect(result.state.goalEvents).toEqual(state.goalEvents)
+    expect(result.state.clock).toEqual(state.clock)
+    const derived = getDerivedMatchState(result.state).state
+    expect(derived.players['HOME:15']).toMatchObject({ location: 'pitch', hasAppeared: true })
+    expect(derived.players['HOME:11']).toMatchObject({ location: 'bench', hasAppeared: false })
+  })
+
+  it('fixes a 10-starter kickoff by adding an 11th', () => {
+    let state = createInitialAppState()
+    state = addPlayers(state, 'HOME', '1,2,3,4,5,6,7,8,9,10,11,12').state
+    for (const p of state.roster.filter((p) => p.number <= 10)) state = setStarter(state, p.id, true).state
+    state = startFirstHalfPhase(state, 0)
+    const result = correctStarters(state, 'HOME', ids([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]))
+    expect(result.errors).toEqual([])
+    expect(starters(result.state as never, 'HOME')).toHaveLength(11)
+  })
+
+  it('leaves the other team untouched (HOME/AWAY independent)', () => {
+    const state = startedMatchWithBothTeams()
+    const result = correctStarters(state, 'HOME', ids([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15]))
+    expect(starters(result.state, 'AWAY')).toEqual(starters(state, 'AWAY'))
+  })
+
+  it('later substitutions and re-entry are judged against the corrected lineup', () => {
+    let state: ReturnType<typeof startedMatchWithBothTeams> = correctStarters(
+      startedMatchWithBothTeams(),
+      'HOME',
+      ids([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15]),
+    ).state
+    // Bench is now 11 and 16 (was 15 and 16).
+    const sub = (s: typeof state, out: number, inn: number, at: number) =>
+      confirmDraft(
+        setDraftPair(setDraftPair(s, 'HOME', 0, 'out', `HOME:${out}`), 'HOME', 0, 'in', `HOME:${inn}`),
+        'HOME',
+        at,
+      )
+
+    // 15 is a starter now: using it as IN is rejected as "already on the pitch".
+    expect(sub(state, 10, 15, 1_000).errors.length).toBeGreaterThan(0)
+
+    const first = sub(state, 10, 11, 1_000)
+    expect(first.errors).toEqual([])
+    state = first.state
+    const second = sub(state, 2, 16, 3_000)
+    expect(second.errors).toEqual([])
+    state = second.state
+
+    // Re-entry is never allowed during the first half (existing rule).
+    expect(sub(state, 11, 10, 4_000).errors.length).toBeGreaterThan(0)
+
+    // At half-time every FP substitute of the corrected lineup (11, 16) has
+    // appeared, so 10 may re-enter.
+    state = endFirstHalfPhase(state, 1_800_000)
+    const reentry = sub(state, 11, 10, 1_800_500)
+    expect(reentry.errors).toEqual([])
+    expect(getDerivedMatchState(reentry.state).state.teamCounters.HOME.reentryPlayerIds).toContain('HOME:10')
+  })
+
+  it('re-entry stays blocked while a bench player of the corrected lineup has never appeared', () => {
+    let state: ReturnType<typeof startedMatchWithBothTeams> = correctStarters(
+      startedMatchWithBothTeams(),
+      'HOME',
+      ids([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15]),
+    ).state
+    const set = (s: typeof state, out: number, inn: number) =>
+      setDraftPair(setDraftPair(s, 'HOME', 0, 'out', `HOME:${out}`), 'HOME', 0, 'in', `HOME:${inn}`)
+    state = confirmDraft(set(state, 10, 11), 'HOME', 1_000).state
+    state = endFirstHalfPhase(state, 1_800_000)
+    // 16 has still never appeared, so 10 may not re-enter yet.
+    const blocked = confirmDraft(set(state, 11, 10), 'HOME', 1_800_500)
+    expect(blocked.errors.length).toBeGreaterThan(0)
+    expect(blocked.state.substitutionEvents).toHaveLength(1)
+  })
+
+  it('drops a half-built substitution draft of that team only', () => {
+    let state = startedMatchWithBothTeams()
+    state = setDraftPair(state, 'HOME', 0, 'out', 'HOME:10')
+    state = setDraftPair(state, 'AWAY', 0, 'out', 'AWAY:10')
+    const result = correctStarters(state, 'HOME', ids([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15]))
+    expect(result.state.drafts.HOME.pairs).toEqual([{}])
+    expect(result.state.drafts.AWAY.pairs[0].outPlayerId).toBe('AWAY:10')
+  })
+
+  it('is refused for a team once it has a confirmed substitution, but stays open for the other team', () => {
+    let state = startedMatchWithBothTeams()
+    state = setDraftPair(state, 'HOME', 0, 'out', 'HOME:10')
+    state = setDraftPair(state, 'HOME', 0, 'in', 'HOME:15')
+    state = confirmDraft(state, 'HOME', 5_000).state
+    expect(canCorrectStarters(state, 'HOME')).toBe(false)
+    expect(canCorrectStarters(state, 'AWAY')).toBe(true)
+
+    const refused = correctStarters(state, 'HOME', ids([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16]))
+    expect(refused.errors).toEqual(['交代を確定済みのため、先発設定は修正できません'])
+    expect(refused.state).toBe(state)
+  })
+
+  it('becomes available again if the only substitution is cancelled', () => {
+    let state = startedMatchWithBothTeams()
+    state = setDraftPair(state, 'HOME', 0, 'out', 'HOME:10')
+    state = setDraftPair(state, 'HOME', 0, 'in', 'HOME:15')
+    state = confirmDraft(state, 'HOME', 5_000).state
+    state = deleteSubstitutionEvent(state, state.substitutionEvents[0].id)
+    expect(canCorrectStarters(state, 'HOME')).toBe(true)
+  })
+
+  it('keeps the 11-starter cap, the 7-starter minimum, and team membership', () => {
+    const state = startedMatchWithBothTeams()
+    expect(correctStarters(state, 'HOME', ids([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 15])).errors).toEqual(['先発は11人までです'])
+    expect(correctStarters(state, 'HOME', ids([1, 2, 3, 4, 5, 6])).errors).toEqual(['先発は7名以上必要です'])
+    expect(correctStarters(state, 'HOME', ids([1, 2, 3, 4, 5, 6, 7], 'AWAY')).errors).toEqual(['先発に選べない選手が含まれています'])
+    expect(correctStarters(state, 'HOME', ids([1, 1, 2, 3, 4, 5, 6, 7])).errors).toEqual(['先発に選べない選手が含まれています'])
+    expect(correctStarters(state, 'HOME', ids([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])).errors).toEqual([])
   })
 })

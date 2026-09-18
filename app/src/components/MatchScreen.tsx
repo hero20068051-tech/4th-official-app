@@ -20,6 +20,7 @@ import {
   type CardDraft,
   type GoalDraft,
   type GoalTimeEdit,
+  canCorrectStarters,
   getDerivedMatchState,
 } from '../domain/matchStore'
 import type { RecordablePhase, SubstitutionPair, SubstitutionPhase, TeamId } from '../domain/types'
@@ -28,6 +29,7 @@ import { CardEntryPanel } from './CardEntryPanel'
 import { ConfirmDialog } from './ConfirmDialog'
 import { GoalEntryPanel } from './GoalEntryPanel'
 import { MatchTimeline } from './MatchTimeline'
+import { StarterCorrectionPanel } from './StarterCorrectionPanel'
 import { SubstitutionPanel } from './SubstitutionPanel'
 import { TeamDot } from './TeamBadge'
 
@@ -47,6 +49,7 @@ interface MatchScreenProps {
   onStartHydrationPause: () => void
   onEndHydrationPause: () => void
   onCorrectHalfStart: (half: HalfKey, correctedAt: number) => void
+  onCorrectStarters: (teamId: TeamId, starterPlayerIds: string[]) => string[]
   onSetDraftPair: (teamId: TeamId, pairIndex: number, role: 'out' | 'in', playerId: string | undefined) => void
   onAddDraftPair: (teamId: TeamId) => void
   onRemoveDraftPair: (teamId: TeamId, pairIndex: number) => void
@@ -74,6 +77,7 @@ export function MatchScreen({
   onStartHydrationPause,
   onEndHydrationPause,
   onCorrectHalfStart,
+  onCorrectStarters,
   onSetDraftPair,
   onAddDraftPair,
   onRemoveDraftPair,
@@ -97,6 +101,7 @@ export function MatchScreen({
   const [confirmingEarlyHydration, setConfirmingEarlyHydration] = useState(false)
   const [activeTeam, setActiveTeam] = useState<TeamId>('HOME')
   const [entryPanel, setEntryPanel] = useState<'goal' | 'card' | null>(null)
+  const [correctingStarters, setCorrectingStarters] = useState(false)
 
   const elapsedMs = computeElapsedMs(state.clock, state.phase, now)
   const isPaused = state.clock.activePauseStartedAt !== null
@@ -302,7 +307,10 @@ export function MatchScreen({
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={() => setActiveTeam('HOME')}
+              onClick={() => {
+                setActiveTeam('HOME')
+                setCorrectingStarters(false)
+              }}
               className={`flex-1 rounded-lg py-2 text-sm font-bold ${
                 activeTeam === 'HOME' ? 'bg-blue-600 text-white' : 'border border-blue-300 text-blue-700'
               }`}
@@ -311,7 +319,10 @@ export function MatchScreen({
             </button>
             <button
               type="button"
-              onClick={() => setActiveTeam('AWAY')}
+              onClick={() => {
+                setActiveTeam('AWAY')
+                setCorrectingStarters(false)
+              }}
               className={`flex-1 rounded-lg py-2 text-sm font-bold ${
                 activeTeam === 'AWAY' ? 'bg-orange-600 text-white' : 'border border-orange-300 text-orange-700'
               }`}
@@ -320,24 +331,49 @@ export function MatchScreen({
             </button>
           </div>
 
-          <SubstitutionPanel
-            // Remounts on team switch so no leftover per-team warning can
-            // survive the switch (see SubstitutionPanel's own clearing effect
-            // for same-team clearing triggers).
-            key={activeTeam}
-            teamId={activeTeam}
-            teamLabel={activeTeam === 'HOME' ? homeName : awayName}
-            roster={state.roster}
-            matchState={matchState}
-            phase={state.phase as SubstitutionPhase}
-            draft={state.drafts[activeTeam]}
-            substitutionEvents={state.substitutionEvents}
-            onSetDraftPair={onSetDraftPair}
-            onAddDraftPair={onAddDraftPair}
-            onRemoveDraftPair={onRemoveDraftPair}
-            onClearDraft={onClearDraft}
-            onConfirm={onConfirmDraft}
-          />
+          {canCorrectStarters(state, activeTeam) && !correctingStarters && (
+            <button
+              type="button"
+              onClick={() => setCorrectingStarters(true)}
+              className="text-sm font-medium text-gray-500 underline underline-offset-2"
+            >
+              先発設定を修正（最初の交代前のみ）
+            </button>
+          )}
+
+          {correctingStarters && canCorrectStarters(state, activeTeam) ? (
+            <StarterCorrectionPanel
+              key={activeTeam}
+              teamId={activeTeam}
+              teamLabel={activeTeam === 'HOME' ? homeName : awayName}
+              players={state.roster.filter((p) => p.teamId === activeTeam)}
+              onConfirm={(teamId, ids) => {
+                const errors = onCorrectStarters(teamId, ids)
+                if (errors.length === 0) setCorrectingStarters(false)
+                return errors
+              }}
+              onCancel={() => setCorrectingStarters(false)}
+            />
+          ) : (
+            <SubstitutionPanel
+              // Remounts on team switch so no leftover per-team warning can
+              // survive the switch (see SubstitutionPanel's own clearing effect
+              // for same-team clearing triggers).
+              key={activeTeam}
+              teamId={activeTeam}
+              teamLabel={activeTeam === 'HOME' ? homeName : awayName}
+              roster={state.roster}
+              matchState={matchState}
+              phase={state.phase as SubstitutionPhase}
+              draft={state.drafts[activeTeam]}
+              substitutionEvents={state.substitutionEvents}
+              onSetDraftPair={onSetDraftPair}
+              onAddDraftPair={onAddDraftPair}
+              onRemoveDraftPair={onRemoveDraftPair}
+              onClearDraft={onClearDraft}
+              onConfirm={onConfirmDraft}
+            />
+          )}
         </>
       )}
 
