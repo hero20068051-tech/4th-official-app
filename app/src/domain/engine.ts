@@ -320,6 +320,15 @@ export function replayMatch(
  * UI (SPEC/Phase1_Spec_v0.2.md section 16: shown on demand, not by default);
  * the authoritative legality check is still validateSubstitutionEvent /
  * applySubstitutionEvent at confirm time, which evaluates the whole group.
+ *
+ * `otherPairsInGroup` are the *other complete pairs of the substitution the
+ * operator is still assembling* (not yet confirmed). Confirm-time validation
+ * treats a group as a whole — a first-time appearance in the group unlocks a
+ * re-entry in the same group (validateTeamGroup, Pass 2) — so this on-screen
+ * check must look at the same prospective picture. Without it, an operator
+ * filling in "the last three unused subs, then two re-entries" during
+ * half-time saw every bench chip blocked on the re-entry pairs even though
+ * the group as a whole was legal.
  */
 export function describeUnavailability(
   state: MatchState,
@@ -328,6 +337,7 @@ export function describeUnavailability(
   phase: SubstitutionPhase,
   playerId: string,
   reentryPolicy: ReentryPolicy,
+  otherPairsInGroup: SubstitutionPair[] = [],
 ): string | null {
   const runtime = state.players[playerId]
   const player = roster.find((p) => p.id === playerId)
@@ -338,9 +348,14 @@ export function describeUnavailability(
     return `まだ${player.number}番は入れません`
   }
 
-  if (!fpUnlockConditionMet(roster, teamId, (id) => state.players[id].hasAppeared)) {
+  const appearingInGroup = new Set(
+    otherPairsInGroup.map((p) => p.inPlayerId).filter((id) => state.players[id] && !state.players[id].hasAppeared),
+  )
+  const hasAppearedProspectively = (id: string) => state.players[id].hasAppeared || appearingInGroup.has(id)
+
+  if (!fpUnlockConditionMet(roster, teamId, hasAppearedProspectively)) {
     const waiting = roster
-      .filter((p) => p.teamId === teamId && isFpSubstitute(p) && !state.players[p.id].hasAppeared)
+      .filter((p) => p.teamId === teamId && isFpSubstitute(p) && !hasAppearedProspectively(p.id))
       .map((p) => p.number)
       .sort((a, b) => a - b)
     return `まだ出場していない選手がいます：${waiting.join('、')}番`
@@ -351,8 +366,12 @@ export function describeUnavailability(
     return repeatDecision.message ?? `${player.number}番は再出場できません`
   }
 
-  const alreadyCounted = state.teamCounters[teamId].reentryPlayerIds.includes(playerId)
-  if (!alreadyCounted && state.teamCounters[teamId].reentryPlayerIds.length >= MAX_REENTRY_PLAYERS) {
+  // Re-entrants already counted, plus those this group would add.
+  const reentryIds = new Set(state.teamCounters[teamId].reentryPlayerIds)
+  for (const p of otherPairsInGroup) {
+    if (state.players[p.inPlayerId]?.hasAppeared) reentryIds.add(p.inPlayerId)
+  }
+  if (!reentryIds.has(playerId) && reentryIds.size >= MAX_REENTRY_PLAYERS) {
     return '再交代できる選手はハーフタイム以降3名までです'
   }
 

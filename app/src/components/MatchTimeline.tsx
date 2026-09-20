@@ -36,6 +36,9 @@ interface MatchTimelineProps {
   onUpdateSubstitutionPairs: (eventId: string, pairs: SubstitutionPair[]) => void
   onLinkStoppage: (eventId: string) => void
   onUnlinkStoppage: (eventId: string) => void
+  canMoveToHalfTime: (eventId: string) => boolean
+  previewMoveToHalfTime: (eventId: string) => number
+  onMoveToHalfTime: (eventId: string) => void
   onEditGoal: (goalId: string, draft: GoalDraft, time?: GoalTimeEdit) => void
   onDeleteGoal: (goalId: string) => void
   onEditCard: (cardId: string, draft: CardDraft) => void
@@ -131,6 +134,11 @@ export function MatchTimeline(props: MatchTimelineProps) {
                           .sort((a, b) => a.number - b.number)}
                         onDelete={() => props.onDeleteSubstitution(e.id)}
                         onSave={(pairs) => props.onUpdateSubstitutionPairs(e.id, pairs)}
+                        halfTimeMove={
+                          props.canMoveToHalfTime(e.id)
+                            ? { preview: () => props.previewMoveToHalfTime(e.id), onMove: () => props.onMoveToHalfTime(e.id) }
+                            : undefined
+                        }
                       />
                     </div>
                   ))}
@@ -161,6 +169,14 @@ export function MatchTimeline(props: MatchTimelineProps) {
                 roster={roster.filter((p) => p.teamId === group.teamId).sort((a, b) => a.number - b.number)}
                 onDelete={() => props.onDeleteSubstitution(event.id)}
                 onSave={(pairs) => props.onUpdateSubstitutionPairs(event.id, pairs)}
+                halfTimeMove={
+                  props.canMoveToHalfTime(event.id)
+                    ? {
+                        preview: () => props.previewMoveToHalfTime(event.id),
+                        onMove: () => props.onMoveToHalfTime(event.id),
+                      }
+                    : undefined
+                }
               />
               {hasOpposingTeamEvent && (
                 <button
@@ -355,6 +371,7 @@ function SubstitutionRowContent({
   roster,
   onDelete,
   onSave,
+  halfTimeMove,
 }: {
   event: SubstitutionEvent
   teamLabel: string
@@ -363,8 +380,13 @@ function SubstitutionRowContent({
   roster: Player[]
   onDelete: () => void
   onSave: (pairs: SubstitutionPair[]) => void
+  // Present only for a second-half substitution that can be re-filed as a
+  // half-time one; `preview` says how many other substitutions the move
+  // would newly flag for review.
+  halfTimeMove?: { preview: () => number; onMove: () => void }
 }) {
   const [mode, setMode] = useState<'view' | 'confirmDelete' | 'edit'>('view')
+  const [askingMove, setAskingMove] = useState(false)
   const [draftPairs, setDraftPairs] = useState<SubstitutionPair[]>(event.teamGroups[0].pairs)
   const teamId = event.teamGroups[0].teamId
 
@@ -452,6 +474,46 @@ function SubstitutionRowContent({
             onConfirmDelete={onDelete}
             onCancelDelete={() => setMode('view')}
           />
+
+          {halfTimeMove &&
+            (askingMove ? (
+              <div className="mt-2 space-y-1 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm">
+                <p className="font-medium text-gray-800">
+                  この交代を「後半」から「ハーフタイム」の記録に変更しますか？
+                </p>
+                <p className="text-xs text-gray-600">
+                  後半の交代回数は元に戻り、ピッチ・ベンチの状態や再出場の人数は記録から計算し直します。
+                </p>
+                {halfTimeMove.preview() > 0 && (
+                  <p className="text-xs font-medium text-amber-800">
+                    ⚠ この変更で、確認が必要になる交代が{halfTimeMove.preview()}件あります（記録は削除されません）。
+                  </p>
+                )}
+                <div className="flex gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAskingMove(false)
+                      halfTimeMove.onMove()
+                    }}
+                    className="rounded-lg bg-gray-900 px-3 py-1.5 font-medium text-white"
+                  >
+                    ハーフタイムに変更する
+                  </button>
+                  <button type="button" onClick={() => setAskingMove(false)} className="text-gray-500 underline">
+                    やめる
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setAskingMove(true)}
+                className="mt-2 text-sm font-medium text-amber-800 underline"
+              >
+                ハーフタイムの交代だった
+              </button>
+            ))}
         </>
       )}
     </div>

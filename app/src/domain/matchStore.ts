@@ -75,7 +75,27 @@ export function createInitialAppState(): AppState {
 // (LOCKED principle: event-log reconstruction, never a separately maintained
 // runtime state that could drift from history).
 export function getDerivedMatchState(state: AppState): ReplayResult {
-  return replayMatch(state.roster, state.substitutionEvents, pendingConfirmationReentryPolicy)
+  return replayMatch(state.roster, eventsInReplayOrder(state.substitutionEvents), pendingConfirmationReentryPolicy)
+}
+
+const REPLAY_PHASE_RANK: Record<SubstitutionPhase, number> = {
+  FIRST_HALF: 0,
+  HALF_TIME: 1,
+  SECOND_HALF: 2,
+}
+
+// The log is appended in real time, so array order is already chronological
+// and this is a no-op for every untouched match. It only matters once an
+// event's phase has been corrected after the fact (a substitution recorded
+// as "second half" that was really half-time): that event must then replay
+// *before* the second-half events, wherever it sits in the array. Only the
+// phase decides the order — never elapsedMs, which is not comparable across
+// a start-time correction — and ties keep their recorded order.
+export function eventsInReplayOrder(events: SubstitutionEvent[]): SubstitutionEvent[] {
+  return events
+    .map((event, index) => ({ event, index }))
+    .sort((a, b) => REPLAY_PHASE_RANK[a.event.phase] - REPLAY_PHASE_RANK[b.event.phase] || a.index - b.index)
+    .map((x) => x.event)
 }
 
 function generateEventId(): string {
@@ -448,6 +468,56 @@ export function updateSubstitutionEventPairs(
         : event,
     ),
   }
+}
+
+// Half-time substitutions are easy to record under the wrong phase when the
+// operator can't keep up (e.g. the second half was started before the last
+// half-time pairs were entered). This re-files a "second half" substitution
+// as a half-time one. It is a real edit of the event's phase — never just a
+// label: the derived state (pitch/bench, appearances, re-entry
+// eligibility, the 3 re-entry cap, and the second-half opportunity counter)
+// is rebuilt from the log by replay, so a second-half opportunity the event
+// had used is given back automatically. Later events that the new picture
+// makes illegal are not deleted; they surface in needsReview like any other
+// edit (SPEC section 14.2).
+//
+// Deliberately one-directional (second half -> half-time): the reverse would
+// have to invent a second-half clock time that nobody recorded.
+export function canMoveSubstitutionToHalfTime(state: AppState, eventId: string): boolean {
+  const event = state.substitutionEvents.find((e) => e.id === eventId)
+  return Boolean(event && event.phase === 'SECOND_HALF' && state.clock.firstHalfEndedAt !== null)
+}
+
+export function moveSubstitutionToHalfTime(state: AppState, eventId: string): AppState {
+  if (!canMoveSubstitutionToHalfTime(state, eventId)) return state
+  const moved = state.substitutionEvents.find((e) => e.id === eventId)!
+  const halfTimeElapsedMs = computeElapsedMs(state.clock, 'HALF_TIME', 0)
+
+  let events = state.substitutionEvents.map((e) =>
+    e.id === eventId ? { ...e, phase: 'HALF_TIME' as const, elapsedMs: halfTimeElapsedMs } : e,
+  )
+
+  // "Same play stoppage" is informational and only makes sense within one
+  // moment; a link that now spans half-time and the second half is dropped
+  // (for both members) rather than left pointing across phases.
+  if (moved.stoppageGroupId) {
+    const groupId = moved.stoppageGroupId
+    const members = events.filter((e) => e.stoppageGroupId === groupId)
+    if (members.some((m) => m.phase !== 'HALF_TIME')) {
+      events = events.map((e) => (e.stoppageGroupId === groupId ? { ...e, stoppageGroupId: null } : e))
+    }
+  }
+
+  return { ...state, substitutionEvents: events }
+}
+
+// What the move would do, without applying it: how many substitutions that
+// were fine before would newly need review afterwards. Lets the UI say so
+// before the operator commits.
+export function previewMoveSubstitutionToHalfTime(state: AppState, eventId: string): { newlyNeedingReview: number } {
+  const before = new Set(getDerivedMatchState(state).needsReview.map((r) => r.eventId))
+  const after = getDerivedMatchState(moveSubstitutionToHalfTime(state, eventId)).needsReview
+  return { newlyNeedingReview: after.filter((r) => !before.has(r.eventId)).length }
 }
 
 // --- Manual stoppage linking (SPEC has no auto-detection rule for this —

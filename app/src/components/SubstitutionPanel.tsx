@@ -6,6 +6,7 @@ import type {
   MatchState,
   Player,
   SubstitutionEvent,
+  SubstitutionPair,
   SubstitutionPhase,
   TeamDraft,
   TeamId,
@@ -217,6 +218,12 @@ function PairEditor({
   onRemoveDraftPair,
   onBlocked,
 }: PairEditorProps) {
+  // The rest of the substitution being assembled counts as if already made
+  // (same "whole group" view the confirm-time check uses).
+  const otherCompletePairs: SubstitutionPair[] = draft.pairs
+    .filter((p, i) => i !== pairIndex && p.outPlayerId && p.inPlayerId)
+    .map((p) => ({ outPlayerId: p.outPlayerId!, inPlayerId: p.inPlayerId! }))
+
   function handleChipTap(role: 'out' | 'in', playerId: string, blockedReason: string | null, selected: boolean) {
     if (locked) return
     if (blockedReason) {
@@ -275,7 +282,15 @@ function PairEditor({
         {benchPlayers.map((player) => {
           const blockedReason = chipUsedElsewhere(draft, pairIndex, player.id)
             ? '同じ選手を2つの交代に入れることはできません'
-            : describeUnavailability(matchState, teamRoster, teamId, phase, player.id, pendingConfirmationReentryPolicy)
+            : describeUnavailability(
+                matchState,
+                teamRoster,
+                teamId,
+                phase,
+                player.id,
+                pendingConfirmationReentryPolicy,
+                otherCompletePairs,
+              )
           const selected = pair.inPlayerId === player.id
           return (
             <button

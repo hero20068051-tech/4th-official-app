@@ -21,7 +21,9 @@ import {
   type GoalDraft,
   type GoalTimeEdit,
   canCorrectStarters,
+  canMoveSubstitutionToHalfTime,
   getDerivedMatchState,
+  previewMoveSubstitutionToHalfTime,
 } from '../domain/matchStore'
 import type { RecordablePhase, SubstitutionPair, SubstitutionPhase, TeamId } from '../domain/types'
 import { useNow } from '../hooks/useNow'
@@ -59,6 +61,7 @@ interface MatchScreenProps {
   onUpdateSubstitutionEventPairs: (eventId: string, pairs: SubstitutionPair[]) => void
   onLinkStoppage: (eventId: string) => void
   onUnlinkStoppage: (eventId: string) => void
+  onMoveSubstitutionToHalfTime: (eventId: string) => void
   onMarkHydrationCompleted: (half: HalfKey, elapsedMs: number) => void
   onRecordGoal: (draft: GoalDraft, phase: RecordablePhase, elapsedMs: number) => void
   onUpdateGoal: (goalId: string, draft: GoalDraft, time?: GoalTimeEdit) => void
@@ -87,6 +90,7 @@ export function MatchScreen({
   onUpdateSubstitutionEventPairs,
   onLinkStoppage,
   onUnlinkStoppage,
+  onMoveSubstitutionToHalfTime,
   onMarkHydrationCompleted,
   onRecordGoal,
   onUpdateGoal,
@@ -390,6 +394,9 @@ export function MatchScreen({
         onUpdateSubstitutionPairs={onUpdateSubstitutionEventPairs}
         onLinkStoppage={onLinkStoppage}
         onUnlinkStoppage={onUnlinkStoppage}
+        canMoveToHalfTime={(eventId) => canMoveSubstitutionToHalfTime(state, eventId)}
+        previewMoveToHalfTime={(eventId) => previewMoveSubstitutionToHalfTime(state, eventId).newlyNeedingReview}
+        onMoveToHalfTime={onMoveSubstitutionToHalfTime}
         onEditGoal={onUpdateGoal}
         onDeleteGoal={onDeleteGoal}
         onEditCard={onUpdateCard}
@@ -401,7 +408,7 @@ export function MatchScreen({
         onToggle={(e) => setShowCorrection((e.target as HTMLDetailsElement).open)}
         className="rounded-lg border border-gray-200 p-3 text-sm text-gray-500"
       >
-        <summary className="cursor-pointer select-none">開始時刻を修正（押し忘れたとき）</summary>
+        <summary className="cursor-pointer select-none">開始時刻を修正（押し忘れ・早く押したとき）</summary>
         {currentHalf && (
           <HalfStartCorrectionForm half={currentHalf} now={now} onApply={onCorrectHalfStart} />
         )}
@@ -537,6 +544,9 @@ function HalfStartCorrectionForm({ half, now, onApply }: HalfStartCorrectionForm
   return (
     <div className="mt-2 space-y-2">
       <p className="text-xs">実際にはどれくらい経過していますか？</p>
+      <p className="text-xs text-gray-400">
+        早く押してしまったときは、実際にキックオフした時点で「0分0秒」を入れて修正してください。
+      </p>
       <div className="flex flex-wrap items-center gap-2">
         <input
           type="number"

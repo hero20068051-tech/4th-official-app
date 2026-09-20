@@ -21,6 +21,7 @@ import {
   type GoalDraft,
   linkToNearestOpposingEvent,
   markHydrationCompleted,
+  moveSubstitutionToHalfTime,
   recordCard,
   recordGoal,
   removeDraftPair,
@@ -139,6 +140,7 @@ function App() {
       }
       onLinkStoppage={(eventId) => setState((s) => linkToNearestOpposingEvent(s, eventId))}
       onUnlinkStoppage={(eventId) => setState((s) => unlinkStoppageEvent(s, eventId))}
+      onMoveSubstitutionToHalfTime={(eventId) => setState((s) => moveSubstitutionToHalfTime(s, eventId))}
       onMarkHydrationCompleted={(half, elapsedMs) => setState((s) => markHydrationCompleted(s, half, elapsedMs))}
       onRecordGoal={(draft: GoalDraft, phase: RecordablePhase, elapsedMs: number) =>
         setState((s) => recordGoal(s, draft, phase, elapsedMs))
