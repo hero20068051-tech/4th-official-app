@@ -21,6 +21,7 @@ import {
   type GoalDraft,
   linkToNearestOpposingEvent,
   markHydrationCompleted,
+  moveSubstitutionPairsToSecondHalf,
   moveSubstitutionToHalfTime,
   recordCard,
   recordGoal,
@@ -141,6 +142,11 @@ function App() {
       onLinkStoppage={(eventId) => setState((s) => linkToNearestOpposingEvent(s, eventId))}
       onUnlinkStoppage={(eventId) => setState((s) => unlinkStoppageEvent(s, eventId))}
       onMoveSubstitutionToHalfTime={(eventId) => setState((s) => moveSubstitutionToHalfTime(s, eventId))}
+      onMoveSubstitutionToSecondHalf={(eventId, moves) => {
+        const result = moveSubstitutionPairsToSecondHalf(state, eventId, moves)
+        if (result.errors.length === 0) setState(result.state)
+        return result.errors
+      }}
       onMarkHydrationCompleted={(half, elapsedMs) => setState((s) => markHydrationCompleted(s, half, elapsedMs))}
       onRecordGoal={(draft: GoalDraft, phase: RecordablePhase, elapsedMs: number) =>
         setState((s) => recordGoal(s, draft, phase, elapsedMs))

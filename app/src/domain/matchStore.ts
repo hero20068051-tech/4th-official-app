@@ -9,7 +9,7 @@ import {
   startHydrationPause,
   startSecondHalf,
 } from './clock'
-import { applySubstitutionEvent, replayMatch } from './engine'
+import { applySubstitutionEvent, MAX_SECOND_HALF_OPPORTUNITIES, replayMatch } from './engine'
 import {
   MAX_SQUAD_SIZE,
   MAX_STARTERS,
@@ -518,6 +518,121 @@ export function previewMoveSubstitutionToHalfTime(state: AppState, eventId: stri
   const before = new Set(getDerivedMatchState(state).needsReview.map((r) => r.eventId))
   const after = getDerivedMatchState(moveSubstitutionToHalfTime(state, eventId)).needsReview
   return { newlyNeedingReview: after.filter((r) => !before.has(r.eventId)).length }
+}
+
+// The opposite correction: substitutions recorded under half-time that were
+// really made in the second half. Unlike the second-half -> half-time move
+// (whose time is the fixed half-time value), this needs facts nobody
+// recorded, so the operator supplies them and nothing is guessed:
+//   * which of the event's pairs actually happened in the second half, and
+//   * for each real substitution occasion, the second-half clock time.
+// One `SecondHalfMove` becomes one new second-half event = one substitution
+// occasion in the engine's own counting (a team's group in the second half
+// costs one opportunity no matter how many pairs it holds). "Same
+// stoppage" is therefore one move holding several pairs, "separate
+// timings" is one move per pair — the operator decides, the app never
+// infers it.
+export interface SecondHalfMove {
+  pairIndexes: number[]
+  elapsedMs: number
+}
+
+export function canMoveSubstitutionToSecondHalf(state: AppState, eventId: string): boolean {
+  const event = state.substitutionEvents.find((e) => e.id === eventId)
+  return Boolean(
+    event && event.phase === 'HALF_TIME' && event.teamGroups.length === 1 && state.clock.secondHalfStartedAt !== null,
+  )
+}
+
+export interface MoveToSecondHalfResult {
+  state: AppState
+  errors: string[]
+}
+
+export function moveSubstitutionPairsToSecondHalf(
+  state: AppState,
+  eventId: string,
+  moves: SecondHalfMove[],
+): MoveToSecondHalfResult {
+  if (!canMoveSubstitutionToSecondHalf(state, eventId)) {
+    return { state, errors: ['この交代は後半の記録に変更できません'] }
+  }
+  const original = state.substitutionEvents.find((e) => e.id === eventId)!
+  const group = original.teamGroups[0]
+
+  const seen = new Set<number>()
+  for (const move of moves) {
+    if (move.pairIndexes.length === 0) return { state, errors: ['後半へ移す交代を選んでください'] }
+    if (!Number.isFinite(move.elapsedMs) || move.elapsedMs < 0) return { state, errors: ['後半の経過時間が正しくありません'] }
+    for (const i of move.pairIndexes) {
+      if (!Number.isInteger(i) || i < 0 || i >= group.pairs.length || seen.has(i)) {
+        return { state, errors: ['後半へ移す交代の指定が正しくありません'] }
+      }
+      seen.add(i)
+    }
+  }
+  if (moves.length === 0) return { state, errors: ['後半へ移す交代を選んでください'] }
+
+  const remainingPairs = group.pairs.filter((_, i) => !seen.has(i))
+  // Chronological among themselves; equal times keep the order given.
+  const ordered = moves.map((m, index) => ({ m, index })).sort((a, b) => a.m.elapsedMs - b.m.elapsedMs || a.index - b.index)
+  const created: SubstitutionEvent[] = ordered.map(({ m }, k) => ({
+    // If nothing stays behind, the first moved event keeps the original id.
+    id: remainingPairs.length === 0 && k === 0 ? original.id : generateEventId(),
+    phase: 'SECOND_HALF',
+    elapsedMs: m.elapsedMs,
+    teamGroups: [{ teamId: group.teamId, pairs: [...m.pairIndexes].sort((a, b) => a - b).map((i) => group.pairs[i]) }],
+    stoppageGroupId: null,
+  }))
+
+  let events: SubstitutionEvent[] =
+    remainingPairs.length > 0
+      ? state.substitutionEvents.map((e) =>
+          e.id === eventId ? { ...e, teamGroups: [{ ...group, pairs: remainingPairs }] } : e,
+        )
+      : state.substitutionEvents.filter((e) => e.id !== eventId)
+
+  // Place each new event by its second-half time among the existing
+  // second-half events (replay order within a phase is array order).
+  for (const event of created) {
+    const at = events.findIndex((e) => e.phase === 'SECOND_HALF' && e.elapsedMs > event.elapsedMs)
+    events = at === -1 ? [...events, event] : [...events.slice(0, at), event, ...events.slice(at)]
+  }
+
+  // A stoppage link that now spans half-time and the second half is dropped
+  // for both members (only possible when the whole event moved).
+  if (remainingPairs.length === 0 && original.stoppageGroupId) {
+    const groupId = original.stoppageGroupId
+    events = events.map((e) => (e.stoppageGroupId === groupId ? { ...e, stoppageGroupId: null } : e))
+  }
+
+  return { state: { ...state, substitutionEvents: events }, errors: [] }
+}
+
+export interface MoveToSecondHalfPreview {
+  errors: string[]
+  newlyNeedingReview: number
+  secondHalfRemaining: number | null
+}
+
+// What the move would do, without applying it (same idea as
+// previewMoveSubstitutionToHalfTime), plus how many second-half
+// opportunities that team would have left afterwards.
+export function previewMoveSubstitutionPairsToSecondHalf(
+  state: AppState,
+  eventId: string,
+  moves: SecondHalfMove[],
+): MoveToSecondHalfPreview {
+  const result = moveSubstitutionPairsToSecondHalf(state, eventId, moves)
+  if (result.errors.length > 0) return { errors: result.errors, newlyNeedingReview: 0, secondHalfRemaining: null }
+  const teamId = state.substitutionEvents.find((e) => e.id === eventId)!.teamGroups[0].teamId
+  const before = new Set(getDerivedMatchState(state).needsReview.map((r) => r.eventId))
+  const after = getDerivedMatchState(result.state)
+  return {
+    errors: [],
+    newlyNeedingReview: after.needsReview.filter((r) => !before.has(r.eventId)).length,
+    secondHalfRemaining: MAX_SECOND_HALF_OPPORTUNITIES - after.state.teamCounters[teamId].secondHalfOpportunitiesUsed,
+  }
 }
 
 // --- Manual stoppage linking (SPEC has no auto-detection rule for this —

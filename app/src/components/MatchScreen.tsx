@@ -22,6 +22,9 @@ import {
   type GoalTimeEdit,
   canCorrectStarters,
   canMoveSubstitutionToHalfTime,
+  canMoveSubstitutionToSecondHalf,
+  previewMoveSubstitutionPairsToSecondHalf,
+  type SecondHalfMove,
   getDerivedMatchState,
   previewMoveSubstitutionToHalfTime,
 } from '../domain/matchStore'
@@ -62,6 +65,7 @@ interface MatchScreenProps {
   onLinkStoppage: (eventId: string) => void
   onUnlinkStoppage: (eventId: string) => void
   onMoveSubstitutionToHalfTime: (eventId: string) => void
+  onMoveSubstitutionToSecondHalf: (eventId: string, moves: SecondHalfMove[]) => string[]
   onMarkHydrationCompleted: (half: HalfKey, elapsedMs: number) => void
   onRecordGoal: (draft: GoalDraft, phase: RecordablePhase, elapsedMs: number) => void
   onUpdateGoal: (goalId: string, draft: GoalDraft, time?: GoalTimeEdit) => void
@@ -91,6 +95,7 @@ export function MatchScreen({
   onLinkStoppage,
   onUnlinkStoppage,
   onMoveSubstitutionToHalfTime,
+  onMoveSubstitutionToSecondHalf,
   onMarkHydrationCompleted,
   onRecordGoal,
   onUpdateGoal,
@@ -190,7 +195,7 @@ export function MatchScreen({
         )}
         {elapsedLooksWrong && (
           <p className="mt-1 text-sm font-medium text-amber-700">
-            経過時間が長すぎるようです。下の「開始時刻を修正」から確認してください。
+            経過時間が長すぎるようです。下の「今の試合時間に合わせる」から確認してください。
           </p>
         )}
       </section>
@@ -397,6 +402,9 @@ export function MatchScreen({
         canMoveToHalfTime={(eventId) => canMoveSubstitutionToHalfTime(state, eventId)}
         previewMoveToHalfTime={(eventId) => previewMoveSubstitutionToHalfTime(state, eventId).newlyNeedingReview}
         onMoveToHalfTime={onMoveSubstitutionToHalfTime}
+        canMoveToSecondHalf={(eventId) => canMoveSubstitutionToSecondHalf(state, eventId)}
+        previewMoveToSecondHalf={(eventId, moves) => previewMoveSubstitutionPairsToSecondHalf(state, eventId, moves)}
+        onMoveToSecondHalf={onMoveSubstitutionToSecondHalf}
         onEditGoal={onUpdateGoal}
         onDeleteGoal={onDeleteGoal}
         onEditCard={onUpdateCard}
@@ -408,7 +416,7 @@ export function MatchScreen({
         onToggle={(e) => setShowCorrection((e.target as HTMLDetailsElement).open)}
         className="rounded-lg border border-gray-200 p-3 text-sm text-gray-500"
       >
-        <summary className="cursor-pointer select-none">開始時刻を修正（押し忘れ・早く押したとき）</summary>
+        <summary className="cursor-pointer select-none">今の試合時間に合わせる</summary>
         {currentHalf && (
           <HalfStartCorrectionForm half={currentHalf} now={now} onApply={onCorrectHalfStart} />
         )}
@@ -543,9 +551,9 @@ function HalfStartCorrectionForm({ half, now, onApply }: HalfStartCorrectionForm
 
   return (
     <div className="mt-2 space-y-2">
-      <p className="text-xs">実際にはどれくらい経過していますか？</p>
-      <p className="text-xs text-gray-400">
-        早く押してしまったときは、実際にキックオフした時点で「0分0秒」を入れて修正してください。
+      <p className="text-xs">実際の試合で、今表示したい経過時間を入力してください。</p>
+      <p className="text-xs text-gray-500">
+        例：実際の{half === 'firstHalf' ? '前半' : '後半'}が3分20秒なら、「3」分「20」秒と入れます。
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <input
@@ -574,7 +582,7 @@ function HalfStartCorrectionForm({ half, now, onApply }: HalfStartCorrectionForm
           onClick={handleApply}
           className="rounded-lg bg-gray-900 px-3 py-1.5 text-sm font-medium text-white"
         >
-          この時間に修正する
+          この時間に合わせる
         </button>
       </div>
       {error && <p className="text-sm font-medium text-red-600">{error}</p>}

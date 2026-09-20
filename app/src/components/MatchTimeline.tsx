@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { buildTimeline, formatTimelineMoment, playerYellowOrdinal } from '../domain/matchRecord'
 import type { ClockState, HalfKey } from '../domain/matchTypes'
-import type { CardDraft, GoalDraft, GoalTimeEdit } from '../domain/matchStore'
+import type { CardDraft, GoalDraft, GoalTimeEdit, MoveToSecondHalfPreview, SecondHalfMove } from '../domain/matchStore'
 import type {
   CardEvent,
   GoalEvent,
@@ -14,6 +14,7 @@ import type {
 } from '../domain/types'
 import { CardEntryPanel } from './CardEntryPanel'
 import { GoalEntryPanel } from './GoalEntryPanel'
+import { MoveToSecondHalfForm } from './MoveToSecondHalfForm'
 import { TeamBadge } from './TeamBadge'
 
 const OFFICIAL_ROLE_LABELS: Record<TeamOfficialRole, string> = {
@@ -39,6 +40,9 @@ interface MatchTimelineProps {
   canMoveToHalfTime: (eventId: string) => boolean
   previewMoveToHalfTime: (eventId: string) => number
   onMoveToHalfTime: (eventId: string) => void
+  canMoveToSecondHalf: (eventId: string) => boolean
+  previewMoveToSecondHalf: (eventId: string, moves: SecondHalfMove[]) => MoveToSecondHalfPreview
+  onMoveToSecondHalf: (eventId: string, moves: SecondHalfMove[]) => string[]
   onEditGoal: (goalId: string, draft: GoalDraft, time?: GoalTimeEdit) => void
   onDeleteGoal: (goalId: string) => void
   onEditCard: (cardId: string, draft: CardDraft) => void
@@ -139,6 +143,14 @@ export function MatchTimeline(props: MatchTimelineProps) {
                             ? { preview: () => props.previewMoveToHalfTime(e.id), onMove: () => props.onMoveToHalfTime(e.id) }
                             : undefined
                         }
+                        secondHalfMove={
+                          props.canMoveToSecondHalf(e.id)
+                            ? {
+                                preview: (moves) => props.previewMoveToSecondHalf(e.id, moves),
+                                onMove: (moves) => props.onMoveToSecondHalf(e.id, moves),
+                              }
+                            : undefined
+                        }
                       />
                     </div>
                   ))}
@@ -174,6 +186,14 @@ export function MatchTimeline(props: MatchTimelineProps) {
                     ? {
                         preview: () => props.previewMoveToHalfTime(event.id),
                         onMove: () => props.onMoveToHalfTime(event.id),
+                      }
+                    : undefined
+                }
+                secondHalfMove={
+                  props.canMoveToSecondHalf(event.id)
+                    ? {
+                        preview: (moves) => props.previewMoveToSecondHalf(event.id, moves),
+                        onMove: (moves) => props.onMoveToSecondHalf(event.id, moves),
                       }
                     : undefined
                 }
@@ -372,6 +392,7 @@ function SubstitutionRowContent({
   onDelete,
   onSave,
   halfTimeMove,
+  secondHalfMove,
 }: {
   event: SubstitutionEvent
   teamLabel: string
@@ -384,9 +405,17 @@ function SubstitutionRowContent({
   // half-time one; `preview` says how many other substitutions the move
   // would newly flag for review.
   halfTimeMove?: { preview: () => number; onMove: () => void }
+  // Present only for a half-time substitution that can be re-filed as a
+  // second-half one (the operator supplies which pairs, how many occasions
+  // and the second-half time).
+  secondHalfMove?: {
+    preview: (moves: SecondHalfMove[]) => MoveToSecondHalfPreview
+    onMove: (moves: SecondHalfMove[]) => string[]
+  }
 }) {
   const [mode, setMode] = useState<'view' | 'confirmDelete' | 'edit'>('view')
   const [askingMove, setAskingMove] = useState(false)
+  const [movingToSecondHalf, setMovingToSecondHalf] = useState(false)
   const [draftPairs, setDraftPairs] = useState<SubstitutionPair[]>(event.teamGroups[0].pairs)
   const teamId = event.teamGroups[0].teamId
 
@@ -512,6 +541,28 @@ function SubstitutionRowContent({
                 className="mt-2 text-sm font-medium text-amber-800 underline"
               >
                 ハーフタイムの交代だった
+              </button>
+            ))}
+
+          {secondHalfMove &&
+            (movingToSecondHalf ? (
+              <MoveToSecondHalfForm
+                pairLabels={event.teamGroups[0].pairs.map((p) => `${numberOf(p.outPlayerId)}→${numberOf(p.inPlayerId)}`)}
+                preview={secondHalfMove.preview}
+                onApply={(moves) => {
+                  const errors = secondHalfMove.onMove(moves)
+                  if (errors.length === 0) setMovingToSecondHalf(false)
+                  return errors
+                }}
+                onCancel={() => setMovingToSecondHalf(false)}
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => setMovingToSecondHalf(true)}
+                className="mt-2 text-sm font-medium text-amber-800 underline"
+              >
+                後半の交代だった
               </button>
             ))}
         </>
