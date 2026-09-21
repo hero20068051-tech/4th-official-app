@@ -38,6 +38,11 @@ import type {
 } from './types'
 
 export interface AppState {
+  // Identity of this match (Phase 2.4). The past-matches archive is keyed by
+  // it, so saving the same finished match twice — or again after a
+  // correction — updates one entry instead of adding a duplicate. Matches
+  // saved before this existed get a stable id in persistence.loadMatchState.
+  matchId: string
   settings: MatchSettings
   roster: Player[]
   phase: MatchPhase
@@ -57,6 +62,7 @@ function emptyDraft(teamId: TeamId): TeamDraft {
 
 export function createInitialAppState(): AppState {
   return {
+    matchId: generateEventId(),
     settings: defaultMatchSettings(),
     roster: [],
     phase: 'PRE_MATCH',

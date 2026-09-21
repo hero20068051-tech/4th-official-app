@@ -7,6 +7,7 @@ import {
   startedAtForElapsed,
 } from '../domain/clock'
 import { MAX_SECOND_HALF_OPPORTUNITIES } from '../domain/engine'
+import { isMatchArchived } from '../domain/matchArchive'
 import { deriveScore } from '../domain/matchRecord'
 import {
   displayTeamName,
@@ -74,6 +75,7 @@ interface MatchScreenProps {
   onUpdateCard: (cardId: string, draft: CardDraft) => void
   onDeleteCard: (cardId: string) => void
   onStartNewMatch: () => void
+  onOpenHome: () => void
 }
 
 export function MatchScreen({
@@ -104,6 +106,7 @@ export function MatchScreen({
   onUpdateCard,
   onDeleteCard,
   onStartNewMatch,
+  onOpenHome,
 }: MatchScreenProps) {
   const now = useNow()
   const [confirmAction, setConfirmAction] = useState<'END_FIRST_HALF' | 'END_MATCH' | 'START_NEW' | null>(null)
@@ -460,6 +463,9 @@ export function MatchScreen({
             >
               新しい試合を始める
             </button>
+            <button type="button" onClick={onOpenHome} className="text-sm text-gray-500 underline">
+              トップへ戻る
+            </button>
           </div>
         )}
       </div>
@@ -491,7 +497,11 @@ export function MatchScreen({
       {confirmAction === 'START_NEW' && (
         <ConfirmDialog
           title="新しい試合を始めますか？"
-          message="この試合の記録は消えます。この操作は取り消せません。"
+          message={
+            isMatchArchived(state.matchId)
+              ? 'この試合は「過去の試合」に残ります。新しい試合の設定に進みます。'
+              : 'この試合の記録は消えます。この操作は取り消せません。'
+          }
           confirmLabel="新しい試合を始める"
           onConfirm={() => {
             setConfirmAction(null)

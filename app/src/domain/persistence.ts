@@ -26,6 +26,15 @@ export function loadMatchState(): AppState | null {
     // Matches saved by an earlier version won't have every field. Default
     // each missing one so a resume never crashes and Phase 1 data keeps
     // working unchanged.
+    // Matches saved before the archive existed have no id. Derive it from the
+    // kickoff time so it is the same on every load (a random id here would
+    // let one finished match be archived twice); a match that has not kicked
+    // off yet can safely get a fresh one.
+    if (typeof parsed.matchId !== 'string' || parsed.matchId === '') {
+      const kickoff = parsed.clock?.firstHalfStartedAt
+      parsed.matchId =
+        typeof kickoff === 'number' ? `legacy-${kickoff}` : `match-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    }
     if (!parsed.hydrationCompletedByHalf) {
       parsed.hydrationCompletedByHalf = { firstHalf: false, secondHalf: false }
     }
@@ -50,4 +59,11 @@ export function clearMatchState(): void {
   } catch {
     // Nothing to clean up if storage is unavailable.
   }
+}
+
+// "Is there a match worth asking about?" A blank pre-match screen (nothing
+// registered yet) is not — it is simply reopened, never offered as
+// "a match in progress".
+export function hasMeaningfulProgress(state: AppState): boolean {
+  return state.phase !== 'PRE_MATCH' || state.roster.length > 0
 }

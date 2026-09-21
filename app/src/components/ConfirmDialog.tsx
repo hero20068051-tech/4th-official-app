@@ -21,7 +21,7 @@ export function ConfirmDialog({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
         <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
-        <p className="mt-2 text-sm text-gray-600">{message}</p>
+        <p className="mt-2 whitespace-pre-line text-sm text-gray-600">{message}</p>
         <div className="mt-5 flex gap-3">
           <button
             type="button"

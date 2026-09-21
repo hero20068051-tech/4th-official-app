@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { cardSummary, goalSummary } from '../domain/matchFormat'
 import { buildTimeline, formatTimelineMoment, playerYellowOrdinal } from '../domain/matchRecord'
 import type { ClockState, HalfKey } from '../domain/matchTypes'
 import type { CardDraft, GoalDraft, GoalTimeEdit, MoveToSecondHalfPreview, SecondHalfMove } from '../domain/matchStore'
@@ -10,19 +11,11 @@ import type {
   SubstitutionEvent,
   SubstitutionPair,
   TeamId,
-  TeamOfficialRole,
 } from '../domain/types'
 import { CardEntryPanel } from './CardEntryPanel'
 import { GoalEntryPanel } from './GoalEntryPanel'
 import { MoveToSecondHalfForm } from './MoveToSecondHalfForm'
 import { TeamBadge } from './TeamBadge'
-
-const OFFICIAL_ROLE_LABELS: Record<TeamOfficialRole, string> = {
-  MANAGER: '監督',
-  COACH: 'コーチ',
-  STAFF: 'スタッフ',
-  OTHER: 'その他',
-}
 
 interface MatchTimelineProps {
   substitutionEvents: SubstitutionEvent[]
@@ -217,16 +210,6 @@ export function MatchTimeline(props: MatchTimelineProps) {
 
 // --- Goal row ---
 
-function goalSummary(goal: GoalEvent, teamLabels: Record<TeamId, string>): string {
-  if (goal.ownGoal) {
-    const other = goal.teamId === 'HOME' ? 'AWAY' : 'HOME'
-    return goal.ownGoalByNumber !== null
-      ? `⚽ OG（${teamLabels[other]} #${goal.ownGoalByNumber}）`
-      : '⚽ OG'
-  }
-  return goal.scorerNumber !== null ? `⚽ 得点 #${goal.scorerNumber}` : '⚽ 得点（得点者未確認）'
-}
-
 function GoalRow({
   goal,
   roster,
@@ -278,16 +261,6 @@ function GoalRow({
 }
 
 // --- Card row ---
-
-function cardSummary(card: CardEvent, ordinal: number | null): string {
-  const mark = card.card === 'YELLOW' ? '🟨 警告' : '🟥 退場'
-  if (card.targetType === 'OFFICIAL') {
-    const role = card.officialRole ? OFFICIAL_ROLE_LABELS[card.officialRole] : '役員'
-    return card.officialName ? `${mark} ${role}（${card.officialName}）` : `${mark} ${role}`
-  }
-  const base = `${mark} #${card.playerNumber ?? '?'}`
-  return ordinal !== null && ordinal >= 2 ? `${base}（${ordinal}枚目）` : base
-}
 
 function CardRow({
   card,

@@ -16,6 +16,8 @@ interface SetupScreenProps {
   onSetStarter: (playerId: string, isStarter: boolean) => string[]
   onSetRegisteredGK: (playerId: string, isRegisteredGK: boolean) => void
   onStartMatch: () => void
+  // Only given when there is something behind the top screen (past matches).
+  onOpenHome?: () => void
 }
 
 export function SetupScreen({
@@ -26,6 +28,7 @@ export function SetupScreen({
   onSetStarter,
   onSetRegisteredGK,
   onStartMatch,
+  onOpenHome,
 }: SetupScreenProps) {
   const [lineupDialog, setLineupDialog] = useState<
     { mode: 'CONFIRM' | 'BLOCK'; teams: { label: string; count: number }[] } | null
@@ -64,7 +67,14 @@ export function SetupScreen({
 
   return (
     <div className="mx-auto max-w-2xl space-y-4 p-4 pb-28">
-      <h1 className="text-xl font-bold text-gray-900">試合前設定</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold text-gray-900">試合前設定</h1>
+        {onOpenHome && (
+          <button type="button" onClick={onOpenHome} className="px-1 py-1 text-xs text-gray-400 underline">
+            トップへ
+          </button>
+        )}
+      </div>
 
       <section className="space-y-3 rounded-xl border border-gray-200 p-4">
         <div className="grid grid-cols-2 gap-3">
