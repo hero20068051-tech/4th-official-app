@@ -11,6 +11,7 @@ import { cardSummary, goalSummary } from '../domain/matchFormat'
 import { buildTimeline, formatTimelineMoment, playerYellowOrdinal, type TimelineEntry } from '../domain/matchRecord'
 import type { SubstitutionEvent, TeamId } from '../domain/types'
 import { ConfirmDialog } from './ConfirmDialog'
+import { ShareResultScreen } from './ShareResultScreen'
 import { TeamBadge } from './TeamBadge'
 
 interface ArchiveScreenProps {
@@ -112,6 +113,7 @@ function Line({ teamId, teamLabel, moment, text }: { teamId: TeamId; teamLabel: 
 
 function ArchiveDetail({ entry, onBack, onDelete }: { entry: ArchivedMatch; onBack: () => void; onDelete: () => void }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [sharing, setSharing] = useState(false)
   const { match } = entry
   const summary = summarizeArchivedMatch(entry)
   const labels: Record<TeamId, string> = { HOME: summary.homeName, AWAY: summary.awayName }
@@ -151,6 +153,8 @@ function ArchiveDetail({ entry, onBack, onDelete }: { entry: ArchivedMatch; onBa
   const cards = entries.filter((e): e is Extract<TimelineEntry, { kind: 'CARD' }> => e.kind === 'CARD')
   const subs = entries.flatMap((e) => (e.kind === 'SUB_SINGLE' ? [e.event] : e.kind === 'SUB_GROUP' ? e.events : []))
 
+  if (sharing) return <ShareResultScreen entry={entry} onBack={() => setSharing(false)} />
+
   return (
     <div className="mx-auto max-w-md space-y-3 p-4 pb-10">
       <ScreenHeader title="試合の記録" onBack={onBack} backLabel="一覧へ" />
@@ -161,6 +165,14 @@ function ArchiveDetail({ entry, onBack, onDelete }: { entry: ArchivedMatch; onBa
           {summary.homeName} {summary.homeScore} - {summary.awayScore} {summary.awayName}
         </p>
       </div>
+
+      <button
+        type="button"
+        onClick={() => setSharing(true)}
+        className="w-full rounded-xl bg-gray-900 py-3 text-base font-bold text-white active:bg-gray-700"
+      >
+        結果を共有
+      </button>
 
       <Section title="得点" count={goals.length} defaultOpen>
         {goals.length === 0 ? <p className="text-sm text-gray-500">記録なし</p> : <ul className="divide-y divide-gray-100">{goals.map(goalLine)}</ul>}
