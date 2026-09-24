@@ -1,8 +1,10 @@
 import { useState } from 'react'
-import { MAX_NUMBER, MAX_SQUAD_SIZE, MIN_NUMBER } from '../domain/matchSetup'
+import { MAX_NUMBER, MIN_NUMBER } from '../domain/matchSetup'
 import type { TeamId } from '../domain/types'
 
 interface PlayerNumberPickerProps {
+  // null = the rules define no squad limit
+  maxSquadSize: number | null
   teamId: TeamId
   existingNumbers: number[]
   onAddPlayers: (teamId: TeamId, rawInput: string) => string[]
@@ -30,7 +32,7 @@ function buildDecades(): DecadeGroup[] {
 
 const DECADES = buildDecades()
 
-export function PlayerNumberPicker({ teamId, existingNumbers, onAddPlayers }: PlayerNumberPickerProps) {
+export function PlayerNumberPicker({ maxSquadSize, teamId, existingNumbers, onAddPlayers }: PlayerNumberPickerProps) {
   const [selected, setSelected] = useState<number[]>([])
   const [rangeIndex, setRangeIndex] = useState(0)
   const [capError, setCapError] = useState<string | null>(null)
@@ -50,8 +52,8 @@ export function PlayerNumberPicker({ teamId, existingNumbers, onAddPlayers }: Pl
       return
     }
 
-    if (existingSet.size + selected.length >= MAX_SQUAD_SIZE) {
-      setCapError(`登録は${MAX_SQUAD_SIZE}名までです`)
+    if (maxSquadSize !== null && existingSet.size + selected.length >= maxSquadSize) {
+      setCapError(`登録は${maxSquadSize}名までです`)
       return
     }
 

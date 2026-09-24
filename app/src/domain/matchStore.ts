@@ -9,17 +9,14 @@ import {
   startHydrationPause,
   startSecondHalf,
 } from './clock'
-import { applySubstitutionEvent, MAX_SECOND_HALF_OPPORTUNITIES, replayMatch } from './engine'
+import { applySubstitutionEvent, replayMatch } from './engine'
 import {
-  MAX_SQUAD_SIZE,
-  MAX_STARTERS,
   defaultMatchSettings,
-  evaluateStartEligibility,
   findDuplicateNumbers,
   parseNumberList,
 } from './matchSetup'
 import type { ClockState, HalfKey, HydrationCompletionState, MatchSettings } from './matchTypes'
-import { pendingConfirmationReentryPolicy } from './reentryPolicy'
+import { ruleSetOf } from './rulesets'
 import type {
   CardEvent,
   CardKind,
@@ -81,7 +78,7 @@ export function createInitialAppState(): AppState {
 // (LOCKED principle: event-log reconstruction, never a separately maintained
 // runtime state that could drift from history).
 export function getDerivedMatchState(state: AppState): ReplayResult {
-  return replayMatch(state.roster, eventsInReplayOrder(state.substitutionEvents), pendingConfirmationReentryPolicy)
+  return replayMatch(state.roster, eventsInReplayOrder(state.substitutionEvents), ruleSetOf(state.settings))
 }
 
 const REPLAY_PHASE_RANK: Record<SubstitutionPhase, number> = {
@@ -143,8 +140,9 @@ export function addPlayers(state: AppState, teamId: TeamId, rawInput: string): A
   }
 
   const newNumbers = numbers.filter((n) => !duplicates.includes(n))
-  if (teamRoster.length + newNumbers.length > MAX_SQUAD_SIZE) {
-    allErrors.push(`登録は${MAX_SQUAD_SIZE}名までです`)
+  const maxSquad = ruleSetOf(state.settings).maxSquadSize
+  if (maxSquad !== null && teamRoster.length + newNumbers.length > maxSquad) {
+    allErrors.push(`登録は${maxSquad}名までです`)
     return { state, errors: allErrors }
   }
 
@@ -182,8 +180,9 @@ export function setStarter(state: AppState, targetPlayerId: string, isStarter: b
 
   if (isStarter) {
     const currentStarters = state.roster.filter((p) => p.teamId === target.teamId && p.isStarter).length
-    if (currentStarters >= MAX_STARTERS) {
-      return { state, errors: [`先発は${MAX_STARTERS}人までです`] }
+    const maxStarters = ruleSetOf(state.settings).maxStarters
+    if (currentStarters >= maxStarters) {
+      return { state, errors: [`先発は${maxStarters}人までです`] }
     }
   }
 
@@ -242,10 +241,11 @@ export function correctStarters(state: AppState, teamId: TeamId, starterPlayerId
   if (chosen.size !== starterPlayerIds.length || starterPlayerIds.some((id) => !teamIds.has(id))) {
     return { state, errors: ['先発に選べない選手が含まれています'] }
   }
-  if (chosen.size > MAX_STARTERS) {
-    return { state, errors: [`先発は${MAX_STARTERS}人までです`] }
+  const rules = ruleSetOf(state.settings)
+  if (chosen.size > rules.maxStarters) {
+    return { state, errors: [`先発は${rules.maxStarters}人までです`] }
   }
-  if (evaluateStartEligibility(chosen.size).level === 'BLOCK') {
+  if (rules.evaluateStartEligibility(chosen.size).level === 'BLOCK') {
     return { state, errors: ['先発は7名以上必要です'] }
   }
 
@@ -436,7 +436,7 @@ export function confirmDraft(state: AppState, teamId: TeamId, now: number): Conf
   }
 
   const currentMatchState = getDerivedMatchState(state).state
-  const { errors } = applySubstitutionEvent(currentMatchState, state.roster, event, pendingConfirmationReentryPolicy)
+  const { errors } = applySubstitutionEvent(currentMatchState, state.roster, event, ruleSetOf(state.settings))
   if (errors.length > 0) {
     return { state, errors }
   }
@@ -637,7 +637,10 @@ export function previewMoveSubstitutionPairsToSecondHalf(
   return {
     errors: [],
     newlyNeedingReview: after.needsReview.filter((r) => !before.has(r.eventId)).length,
-    secondHalfRemaining: MAX_SECOND_HALF_OPPORTUNITIES - after.state.teamCounters[teamId].secondHalfOpportunitiesUsed,
+    secondHalfRemaining:
+      ruleSetOf(state.settings).secondHalfOpportunityLimit === null
+        ? null
+        : ruleSetOf(state.settings).secondHalfOpportunityLimit! - after.state.teamCounters[teamId].secondHalfOpportunitiesUsed,
   }
 }
 

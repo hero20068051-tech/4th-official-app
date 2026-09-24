@@ -198,10 +198,12 @@ export function MoveToSecondHalfForm({ pairLabels, preview, onApply, onCancel }:
 
       {result && result.errors.length === 0 && (
         <div className="rounded-lg bg-white p-2 text-xs text-gray-700">
-          <p>
-            後半の交代機会：この変更で{occasions}回分を使い、
-            <span className="font-bold">あと{result.secondHalfRemaining}回</span>になります
-          </p>
+          {result.secondHalfRemaining !== null && (
+            <p>
+              後半の交代機会：この変更で{occasions}回分を使い、
+              <span className="font-bold">あと{result.secondHalfRemaining}回</span>になります
+            </p>
+          )}
           {result.newlyNeedingReview > 0 && (
             <p className="mt-1 font-medium text-amber-800">
               ⚠ この変更で、確認が必要になる交代が{result.newlyNeedingReview}件あります（記録は削除されません）。

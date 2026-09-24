@@ -1,4 +1,7 @@
 import type { HydrationMode, MatchSettings } from './matchTypes'
+import { DEFAULT_RULESET_ID } from './rulesets/ids'
+import { standardStartEligibility } from './rulesets/startEligibility'
+import type { StartEligibility } from './rulesets/types'
 import type { TeamId } from './types'
 
 export const MIN_NUMBER = 1
@@ -10,6 +13,7 @@ export function defaultMatchSettings(): MatchSettings {
   return {
     homeTeamName: '',
     awayTeamName: '',
+    rulesetId: DEFAULT_RULESET_ID,
     halfLengthMinutes: 30,
     hydrationMode: 'NONE',
     hydrationMemo: '',
@@ -100,26 +104,10 @@ export function compareVoiceRosterTakes(first: number[], second: number[]): Voic
   return { matched: onlyInFirst.length === 0 && onlyInSecond.length === 0, agreed, onlyInFirst, onlyInSecond }
 }
 
-export type StartEligibility =
-  | { level: 'OK' }
-  | { level: 'WARN'; message: string }
-  | { level: 'BLOCK'; message: string }
-
-// 03_PHASE1_SCOPE.md section 3 / 02_CONFIRMED_RULES.md section D (CONFIRMED,
-// do not reinterpret): 11 starters = normal start, 7-10 = warn-then-allow,
-// 6 or fewer = cannot start.
-export function evaluateStartEligibility(starterCount: number): StartEligibility {
-  if (starterCount <= 6) {
-    return { level: 'BLOCK', message: '7人未満のため開始できません' }
-  }
-  if (starterCount <= 10) {
-    return {
-      level: 'WARN',
-      message: `先発が${starterCount}人です。この人数のまま開始しますか？`,
-    }
-  }
-  return { level: 'OK' }
-}
+// The kick-off headcount rule (11 = normal, 7-10 = confirm, 6 or fewer = no) is
+// shared by the rule sets; it lives in rulesets/startEligibility.ts.
+export { standardStartEligibility as evaluateStartEligibility } from './rulesets/startEligibility'
+export type { StartEligibility } from './rulesets/types'
 
 export interface TeamStarterCount {
   teamId: TeamId
@@ -135,14 +123,17 @@ export type StartLineupCheck =
 // button needs (Phase 2.2). Thresholds come from evaluateStartEligibility so
 // the CONFIRMED 11 / 7-10 / 6-or-fewer rule lives in exactly one place.
 // BLOCK wins over CONFIRM; `teams` lists only the teams responsible.
-export function checkStartLineups(counts: Record<TeamId, number>): StartLineupCheck {
+export function checkStartLineups(
+  counts: Record<TeamId, number>,
+  rules: { evaluateStartEligibility(count: number): StartEligibility } = { evaluateStartEligibility: standardStartEligibility },
+): StartLineupCheck {
   const entries: TeamStarterCount[] = (['HOME', 'AWAY'] as const).map((teamId) => ({
     teamId,
     count: counts[teamId],
   }))
-  const blocked = entries.filter((e) => evaluateStartEligibility(e.count).level === 'BLOCK')
+  const blocked = entries.filter((e) => rules.evaluateStartEligibility(e.count).level === 'BLOCK')
   if (blocked.length > 0) return { level: 'BLOCK', teams: blocked }
-  const short = entries.filter((e) => evaluateStartEligibility(e.count).level === 'WARN')
+  const short = entries.filter((e) => rules.evaluateStartEligibility(e.count).level === 'WARN')
   if (short.length > 0) return { level: 'CONFIRM', teams: short }
   return { level: 'OK' }
 }

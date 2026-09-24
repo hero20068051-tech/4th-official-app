@@ -6,8 +6,8 @@ import {
   parseElapsedInput,
   startedAtForElapsed,
 } from '../domain/clock'
-import { MAX_SECOND_HALF_OPPORTUNITIES } from '../domain/engine'
 import { isMatchArchived } from '../domain/matchArchive'
+import { ruleSetOf } from '../domain/rulesets'
 import { deriveScore } from '../domain/matchRecord'
 import {
   displayTeamName,
@@ -128,6 +128,8 @@ export function MatchScreen({
     () => (state.phase === 'FIRST_HALF' || state.phase === 'SECOND_HALF') && elapsedMs > MAX_REASONABLE_ELAPSED_MS,
   )
 
+  const rules = ruleSetOf(state.settings)
+  const secondHalfLimit = rules.secondHalfOpportunityLimit
   const homeName = displayTeamName(state.settings.homeTeamName, 'HOME')
   const awayName = displayTeamName(state.settings.awayTeamName, 'AWAY')
 
@@ -232,17 +234,17 @@ export function MatchScreen({
       <div className="grid grid-cols-2 gap-3 text-center">
         <div className="rounded-xl border-2 border-blue-300 bg-blue-50/40 p-3">
           <p className="text-sm font-bold text-gray-800">{homeName}</p>
-          {state.phase === 'SECOND_HALF' && (
+          {state.phase === 'SECOND_HALF' && secondHalfLimit !== null && (
             <p className="mt-1 text-xs text-gray-600">
-              後半の交代 あと{Math.max(0, MAX_SECOND_HALF_OPPORTUNITIES - matchState.teamCounters.HOME.secondHalfOpportunitiesUsed)}回
+              後半の交代 あと{Math.max(0, secondHalfLimit - matchState.teamCounters.HOME.secondHalfOpportunitiesUsed)}回
             </p>
           )}
         </div>
         <div className="rounded-xl border-2 border-orange-300 bg-orange-50/40 p-3">
           <p className="text-sm font-bold text-gray-800">{awayName}</p>
-          {state.phase === 'SECOND_HALF' && (
+          {state.phase === 'SECOND_HALF' && secondHalfLimit !== null && (
             <p className="mt-1 text-xs text-gray-600">
-              後半の交代 あと{Math.max(0, MAX_SECOND_HALF_OPPORTUNITIES - matchState.teamCounters.AWAY.secondHalfOpportunitiesUsed)}回
+              後半の交代 あと{Math.max(0, secondHalfLimit - matchState.teamCounters.AWAY.secondHalfOpportunitiesUsed)}回
             </p>
           )}
         </div>
@@ -355,6 +357,7 @@ export function MatchScreen({
 
           {correctingStarters && canCorrectStarters(state, activeTeam) ? (
             <StarterCorrectionPanel
+              rules={rules}
               key={activeTeam}
               teamId={activeTeam}
               teamLabel={activeTeam === 'HOME' ? homeName : awayName}
@@ -368,6 +371,7 @@ export function MatchScreen({
             />
           ) : (
             <SubstitutionPanel
+              rules={rules}
               // Remounts on team switch so no leftover per-team warning can
               // survive the switch (see SubstitutionPanel's own clearing effect
               // for same-team clearing triggers).

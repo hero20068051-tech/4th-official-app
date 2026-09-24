@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { checkStartLineups, displayTeamName, HYDRATION_MODE_LABELS, isValidHalfLength } from '../domain/matchSetup'
 import type { HydrationMode, MatchSettings } from '../domain/matchTypes'
 import type { TeamId } from '../domain/types'
+import { ruleSetOf } from '../domain/rulesets'
 import { StarterShortageDialog } from './StarterShortageDialog'
 import { TeamRosterEditor } from './TeamRosterEditor'
 import type { AppState } from '../domain/matchStore'
@@ -41,6 +42,7 @@ export function SetupScreen({
     isValidHalfLength(Number(customHalfLength)) &&
     state.settings.halfLengthMinutes === Number(customHalfLength)
 
+  const rules = ruleSetOf(state.settings)
   const homePlayers = state.roster.filter((p) => p.teamId === 'HOME')
   const awayPlayers = state.roster.filter((p) => p.teamId === 'AWAY')
 
@@ -48,7 +50,7 @@ export function SetupScreen({
     const check = checkStartLineups({
       HOME: homePlayers.filter((p) => p.isStarter).length,
       AWAY: awayPlayers.filter((p) => p.isStarter).length,
-    })
+    }, rules)
     if (check.level === 'OK') {
       onStartMatch()
       return
@@ -171,6 +173,7 @@ export function SetupScreen({
       </section>
 
       <TeamRosterEditor
+        maxSquadSize={rules.maxSquadSize}
         teamId="HOME"
         teamLabel={state.settings.homeTeamName.trim() || 'HOME'}
         players={homePlayers}
@@ -180,6 +183,7 @@ export function SetupScreen({
         onSetRegisteredGK={onSetRegisteredGK}
       />
       <TeamRosterEditor
+        maxSquadSize={rules.maxSquadSize}
         teamId="AWAY"
         teamLabel={state.settings.awayTeamName.trim() || 'AWAY'}
         players={awayPlayers}

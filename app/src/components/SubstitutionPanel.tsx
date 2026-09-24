@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { describeUnavailability, MAX_REENTRY_PLAYERS, MAX_SECOND_HALF_OPPORTUNITIES } from '../domain/engine'
-import { pendingConfirmationReentryPolicy } from '../domain/reentryPolicy'
+import { describeUnavailability } from '../domain/engine'
+import type { RuleSet } from '../domain/rulesets'
 import type {
   DraftPair,
   MatchState,
@@ -13,6 +13,7 @@ import type {
 } from '../domain/types'
 
 interface SubstitutionPanelProps {
+  rules: RuleSet
   teamId: TeamId
   teamLabel: string
   roster: Player[]
@@ -37,6 +38,7 @@ function chipUsedElsewhere(draft: TeamDraft, pairIndex: number, playerId: string
 }
 
 export function SubstitutionPanel({
+  rules,
   teamId,
   teamLabel,
   roster,
@@ -61,13 +63,15 @@ export function SubstitutionPanel({
 
   // "現在の状態から導かれる説明" — recomputed from matchState/phase every
   // render, never stored, so it can never go stale.
-  const secondHalfRemaining = MAX_SECOND_HALF_OPPORTUNITIES - counters.secondHalfOpportunitiesUsed
-  const isSecondHalfExhausted = phase === 'SECOND_HALF' && secondHalfRemaining <= 0
+  const secondHalfLimit = rules.secondHalfOpportunityLimit
+  const reentryLimit = rules.reentryPlayerLimit
+  const secondHalfRemaining = secondHalfLimit === null ? null : secondHalfLimit - counters.secondHalfOpportunitiesUsed
+  const isSecondHalfExhausted = phase === 'SECOND_HALF' && secondHalfRemaining !== null && secondHalfRemaining <= 0
   const reentryNumbers = counters.reentryPlayerIds
     .map((id) => teamRoster.find((p) => p.id === id)?.number)
     .filter((n): n is number => n !== undefined)
     .sort((a, b) => a - b)
-  const reentryExhausted = reentryNumbers.length >= MAX_REENTRY_PLAYERS
+  const reentryExhausted = reentryLimit !== null && reentryNumbers.length >= reentryLimit
 
   // "一時的な操作エラー" — must not outlive the context it was shown in.
   // Cleared whenever the draft changes (a fresh selection, or "入力を取り
@@ -90,20 +94,20 @@ export function SubstitutionPanel({
 
       {(phase === 'HALF_TIME' || phase === 'SECOND_HALF') && (
         <p className="mt-1 text-xs text-gray-500">
-          {phase === 'SECOND_HALF' && <>交代 あと{Math.max(0, secondHalfRemaining)}回｜</>}
-          リエントリー {reentryNumbers.length}/{MAX_REENTRY_PLAYERS}名
+          {phase === 'SECOND_HALF' && secondHalfRemaining !== null && <>交代 あと{Math.max(0, secondHalfRemaining)}回｜</>}
+          リエントリー {reentryNumbers.length}{reentryLimit !== null && <>/{reentryLimit}</>}名
           {reentryNumbers.length > 0 && <>（{reentryNumbers.join('・')}）</>}
         </p>
       )}
 
       {isSecondHalfExhausted && (
         <p className="mt-2 rounded-lg bg-gray-100 p-2 text-sm font-medium text-gray-700">
-          後半の交代を{MAX_SECOND_HALF_OPPORTUNITIES}回使っています
+          後半の交代を{secondHalfLimit}回使っています
         </p>
       )}
       {!isSecondHalfExhausted && reentryExhausted && (phase === 'HALF_TIME' || phase === 'SECOND_HALF') && (
         <p className="mt-2 rounded-lg bg-gray-100 p-2 text-sm font-medium text-gray-700">
-          リエントリー{MAX_REENTRY_PLAYERS}名を使用済みのため、これ以上のリエントリーはできません
+          リエントリー{reentryLimit}名を使用済みのため、これ以上のリエントリーはできません
         </p>
       )}
 
@@ -116,6 +120,7 @@ export function SubstitutionPanel({
             pairIndex={pairIndex}
             teamId={teamId}
             phase={phase}
+            rules={rules}
             matchState={matchState}
             teamRoster={teamRoster}
             pitchPlayers={pitchPlayers}
@@ -178,6 +183,7 @@ export function SubstitutionPanel({
 }
 
 interface PairEditorProps {
+  rules: RuleSet
   pair: DraftPair
   pairIndex: number
   teamId: TeamId
@@ -203,6 +209,7 @@ interface PairEditorProps {
 // substitutions — that reason is already shown as a standing banner above,
 // so nothing is hidden by disabling here.
 function PairEditor({
+  rules,
   pair,
   pairIndex,
   teamId,
@@ -288,7 +295,7 @@ function PairEditor({
                 teamId,
                 phase,
                 player.id,
-                pendingConfirmationReentryPolicy,
+                rules,
                 otherCompletePairs,
               )
           const selected = pair.inPlayerId === player.id

@@ -1,6 +1,11 @@
 export type HydrationMode = 'NONE' | 'RUNNING_CLOCK' | 'STOP_CLOCK'
 
+import type { RuleSetId } from './rulesets/ids'
+
 export interface MatchSettings {
+  // Which tournament's rules this match is played under. Absent on matches
+  // saved before rule sets existed; those read as the default (Saitama women's league).
+  rulesetId?: RuleSetId
   homeTeamName: string
   awayTeamName: string
   halfLengthMinutes: number

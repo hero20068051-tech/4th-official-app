@@ -6,6 +6,7 @@ import { VoiceRosterEntry } from './VoiceRosterEntry'
 const ERROR_DISPLAY_MS = 4000
 
 interface TeamRosterEditorProps {
+  maxSquadSize: number | null
   teamId: TeamId
   teamLabel: string
   players: Player[]
@@ -16,6 +17,7 @@ interface TeamRosterEditorProps {
 }
 
 export function TeamRosterEditor({
+  maxSquadSize,
   teamId,
   teamLabel,
   players,
@@ -76,6 +78,7 @@ export function TeamRosterEditor({
 
       <p className="mt-3 text-sm font-medium text-gray-700">背番号を選択</p>
       <PlayerNumberPicker
+        maxSquadSize={maxSquadSize}
         teamId={teamId}
         existingNumbers={players.map((p) => p.number)}
         onAddPlayers={onAddPlayers}

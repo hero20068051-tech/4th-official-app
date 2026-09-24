@@ -3,7 +3,7 @@ import { OFFICIAL_ROLE_LABELS } from './matchFormat'
 import { archivedMatchDateMs, summarizeArchivedMatch, type ArchivedMatch } from './matchArchive'
 import { buildTimeline, formatTimelineMoment, playerYellowOrdinal } from './matchRecord'
 import { eventsInReplayOrder } from './matchStore'
-import { pendingConfirmationReentryPolicy } from './reentryPolicy'
+import { ruleSetOf } from './rulesets'
 import type { ReplayIssue, TeamId } from './types'
 
 // Result-sharing model (Phase 2.5). Everything here is a *pure read* of an
@@ -120,7 +120,7 @@ export function archivedNeedsReview(entry: ArchivedMatch): ReplayIssue[] {
   return replayMatch(
     entry.match.roster,
     eventsInReplayOrder(entry.match.substitutionEvents),
-    pendingConfirmationReentryPolicy,
+    ruleSetOf(entry.match.settings),
   ).needsReview
 }
 

@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { MAX_STARTERS, evaluateStartEligibility } from '../domain/matchSetup'
+import type { RuleSet } from '../domain/rulesets'
 import type { Player, TeamId } from '../domain/types'
 import { StarterShortageDialog } from './StarterShortageDialog'
 
 interface StarterCorrectionPanelProps {
+  rules: RuleSet
   teamId: TeamId
   teamLabel: string
   players: Player[]
@@ -16,7 +17,7 @@ interface StarterCorrectionPanelProps {
 // creates a substitution event — the parent just receives the new starter
 // set. Everything downstream (bench, re-entry eligibility, counters) is
 // re-derived from that set by the existing replay.
-export function StarterCorrectionPanel({ teamId, teamLabel, players, onConfirm, onCancel }: StarterCorrectionPanelProps) {
+export function StarterCorrectionPanel({ rules, teamId, teamLabel, players, onConfirm, onCancel }: StarterCorrectionPanelProps) {
   const sorted = [...players].sort((a, b) => a.number - b.number)
   const [chosen, setChosen] = useState<string[]>(() => sorted.filter((p) => p.isStarter).map((p) => p.id))
   const [errors, setErrors] = useState<string[]>([])
@@ -25,7 +26,7 @@ export function StarterCorrectionPanel({ teamId, teamLabel, players, onConfirm, 
   const chosenSet = new Set(chosen)
   const chosenNumbers = sorted.filter((p) => chosenSet.has(p.id)).map((p) => p.number)
   const count = chosen.length
-  const level = evaluateStartEligibility(count).level
+  const level = rules.evaluateStartEligibility(count).level
 
   function toggle(player: Player) {
     if (chosenSet.has(player.id)) {
@@ -33,8 +34,8 @@ export function StarterCorrectionPanel({ teamId, teamLabel, players, onConfirm, 
       setErrors([])
       return
     }
-    if (count >= MAX_STARTERS) {
-      setErrors([`先発は${MAX_STARTERS}人までです`])
+    if (count >= rules.maxStarters) {
+      setErrors([`先発は${rules.maxStarters}人までです`])
       return
     }
     setErrors([])
