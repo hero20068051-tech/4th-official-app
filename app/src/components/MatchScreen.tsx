@@ -24,6 +24,7 @@ import {
   canCorrectStarters,
   canMoveSubstitutionToHalfTime,
   canMoveSubstitutionToSecondHalf,
+  opportunitiesUsedByMoves,
   previewMoveSubstitutionPairsToSecondHalf,
   type SecondHalfMove,
   getDerivedMatchState,
@@ -129,7 +130,6 @@ export function MatchScreen({
   )
 
   const rules = ruleSetOf(state.settings)
-  const secondHalfLimit = rules.secondHalfOpportunityLimit
   const homeName = displayTeamName(state.settings.homeTeamName, 'HOME')
   const awayName = displayTeamName(state.settings.awayTeamName, 'AWAY')
 
@@ -137,6 +137,15 @@ export function MatchScreen({
     state.phase === 'FIRST_HALF' ? 'firstHalf' : state.phase === 'SECOND_HALF' ? 'secondHalf' : null
 
   const { state: matchState, needsReview } = getDerivedMatchState(state)
+  const badgeFor = (teamId: TeamId) =>
+    rules.secondHalfBadge({
+      counters: matchState.teamCounters[teamId],
+      phase: state.phase,
+      roster: state.roster.filter((p) => p.teamId === teamId),
+      teamId,
+    })
+  const homeBadge = badgeFor('HOME')
+  const awayBadge = badgeFor('AWAY')
   const canSubstitute = state.phase === 'FIRST_HALF' || state.phase === 'HALF_TIME' || state.phase === 'SECOND_HALF'
 
   const hydrationCompleted = currentHalf ? Boolean(state.hydrationCompletedByHalf?.[currentHalf]) : false
@@ -234,19 +243,11 @@ export function MatchScreen({
       <div className="grid grid-cols-2 gap-3 text-center">
         <div className="rounded-xl border-2 border-blue-300 bg-blue-50/40 p-3">
           <p className="text-sm font-bold text-gray-800">{homeName}</p>
-          {state.phase === 'SECOND_HALF' && secondHalfLimit !== null && (
-            <p className="mt-1 text-xs text-gray-600">
-              後半の交代 あと{Math.max(0, secondHalfLimit - matchState.teamCounters.HOME.secondHalfOpportunitiesUsed)}回
-            </p>
-          )}
+          {homeBadge && <p className="mt-1 text-xs text-gray-600">{homeBadge}</p>}
         </div>
         <div className="rounded-xl border-2 border-orange-300 bg-orange-50/40 p-3">
           <p className="text-sm font-bold text-gray-800">{awayName}</p>
-          {state.phase === 'SECOND_HALF' && secondHalfLimit !== null && (
-            <p className="mt-1 text-xs text-gray-600">
-              後半の交代 あと{Math.max(0, secondHalfLimit - matchState.teamCounters.AWAY.secondHalfOpportunitiesUsed)}回
-            </p>
-          )}
+          {awayBadge && <p className="mt-1 text-xs text-gray-600">{awayBadge}</p>}
         </div>
       </div>
 
@@ -410,7 +411,10 @@ export function MatchScreen({
         previewMoveToHalfTime={(eventId) => previewMoveSubstitutionToHalfTime(state, eventId).newlyNeedingReview}
         onMoveToHalfTime={onMoveSubstitutionToHalfTime}
         canMoveToSecondHalf={(eventId) => canMoveSubstitutionToSecondHalf(state, eventId)}
-        previewMoveToSecondHalf={(eventId, moves) => previewMoveSubstitutionPairsToSecondHalf(state, eventId, moves)}
+        previewMoveToSecondHalf={(eventId, moves) => ({
+          ...previewMoveSubstitutionPairsToSecondHalf(state, eventId, moves),
+          opportunitiesConsumed: opportunitiesUsedByMoves(state, eventId, moves),
+        })}
         onMoveToSecondHalf={onMoveSubstitutionToSecondHalf}
         onEditGoal={onUpdateGoal}
         onDeleteGoal={onDeleteGoal}

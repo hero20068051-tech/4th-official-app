@@ -29,7 +29,10 @@ import {
   removeDraftPair,
   removePlayer,
   setDraftPair,
+  setPlayerCategory,
   setRegisteredGK,
+  setRuleSet,
+  setUnsetPlayersCategory,
   setStarter,
   startFirstHalfPhase,
   startHydrationPausePhase,
@@ -151,6 +154,21 @@ function App() {
       <SetupScreen
         state={state}
         onUpdateSettings={(partial) => setState((s) => updateSettings(s, partial))}
+        onSetRuleSet={(id) => {
+          const { state: next, errors } = setRuleSet(state, id)
+          if (errors.length === 0) setState(next)
+          return errors
+        }}
+        onSetCategory={(playerIds, category) => {
+          const { state: next, errors } = setPlayerCategory(state, playerIds, category)
+          if (errors.length === 0) setState(next)
+          return errors
+        }}
+        onSetUnsetCategory={(teamId, category) => {
+          const { state: next, errors } = setUnsetPlayersCategory(state, teamId, category)
+          if (errors.length === 0) setState(next)
+          return errors
+        }}
         onAddPlayers={(teamId: TeamId, rawInput: string) => {
           const { state: next, errors } = addPlayers(state, teamId, rawInput)
           if (errors.length === 0) setState(next)

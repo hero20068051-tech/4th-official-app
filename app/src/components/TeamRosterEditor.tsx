@@ -1,12 +1,17 @@
 import { useEffect, useState } from 'react'
-import type { Player, TeamId } from '../domain/types'
+import type { RuleSet } from '../domain/rulesets'
+import type { Player, PlayerCategory, TeamId } from '../domain/types'
+import { PlayerCategoryEditor } from './PlayerCategoryEditor'
 import { PlayerNumberPicker } from './PlayerNumberPicker'
 import { VoiceRosterEntry } from './VoiceRosterEntry'
 
 const ERROR_DISPLAY_MS = 4000
 
 interface TeamRosterEditorProps {
+  rules: RuleSet
   maxSquadSize: number | null
+  onSetCategory: (playerIds: string[], category: PlayerCategory) => string[]
+  onSetUnsetCategory: (teamId: TeamId, category: PlayerCategory) => string[]
   teamId: TeamId
   teamLabel: string
   players: Player[]
@@ -17,7 +22,10 @@ interface TeamRosterEditorProps {
 }
 
 export function TeamRosterEditor({
+  rules,
   maxSquadSize,
+  onSetCategory,
+  onSetUnsetCategory,
   teamId,
   teamLabel,
   players,
@@ -75,6 +83,16 @@ export function TeamRosterEditor({
           登録{players.length}名 / 先発{starterCount}名
         </span>
       </h2>
+      {rules.playerCategories !== null && (
+        <p className="mt-1 text-xs text-gray-700">
+          {rules.playerCategories.map((o) => `${o.label} ${players.filter((p) => p.category === o.id).length}名`).join('／')}
+          {players.some((p) => p.category === undefined) && (
+            <span className="font-bold text-red-700">
+              ／⚠未設定 {players.filter((p) => p.category === undefined).length}名
+            </span>
+          )}
+        </p>
+      )}
 
       <p className="mt-3 text-sm font-medium text-gray-700">背番号を選択</p>
       <PlayerNumberPicker
@@ -82,6 +100,13 @@ export function TeamRosterEditor({
         teamId={teamId}
         existingNumbers={players.map((p) => p.number)}
         onAddPlayers={onAddPlayers}
+      />
+
+      <PlayerCategoryEditor
+        rules={rules}
+        players={players}
+        onAssign={onSetCategory}
+        onAssignUnset={(category) => onSetUnsetCategory(teamId, category)}
       />
 
       <button
@@ -164,6 +189,7 @@ export function TeamRosterEditor({
                 />
                 先発
               </label>
+              {rules.usesGoalkeeperRegistration && (
               <label className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -173,6 +199,7 @@ export function TeamRosterEditor({
                 />
                 GK登録
               </label>
+              )}
             </div>
           </li>
         ))}

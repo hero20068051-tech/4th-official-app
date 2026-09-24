@@ -1,7 +1,7 @@
 import type { ReentryPolicy } from '../reentryPolicy'
 import type { MatchState, Player, PlayerRuntimeState, SubstitutionPair, TeamCounters, TeamId } from '../types'
 import { standardStartEligibility } from './startEligibility'
-import type { ClassifiedPair, GroupEvaluationContext, GroupValidation, RuleSet } from './types'
+import type { ClassifiedPair, CounterViewArgs, GroupEvaluationContext, GroupValidation, RuleSet } from './types'
 
 // 第34回埼玉県女子リーグ大会 (PROJECT_RULES/02_CONFIRMED_RULES.md). This is the
 // rule set the app was built and field-tested with; the rules below were
@@ -227,6 +227,23 @@ function describeUnavailability(args: {
   return null
 }
 
+// What the substitution panel says about the counters. Wording is exactly what
+// the screens showed before rule sets existed.
+function reentryNumbers(view: CounterViewArgs): number[] {
+  return view.counters.reentryPlayerIds
+    .map((id) => view.roster.find((p) => p.id === id)?.number)
+    .filter((n): n is number => n !== undefined)
+    .sort((a, b) => a - b)
+}
+
+function secondHalfRemaining(view: CounterViewArgs): number {
+  return MAX_SECOND_HALF_OPPORTUNITIES - view.counters.secondHalfOpportunitiesUsed
+}
+
+function isPanelLocked(view: CounterViewArgs): boolean {
+  return view.phase === 'SECOND_HALF' && secondHalfRemaining(view) <= 0
+}
+
 export const saitamaWomenRules: RuleSet = {
   id: 'saitama-women',
   name: '埼玉県女子リーグ',
@@ -234,9 +251,37 @@ export const saitamaWomenRules: RuleSet = {
   maxSquadSize: MAX_SQUAD_SIZE,
   maxStarters: MAX_STARTERS,
   evaluateStartEligibility: standardStartEligibility,
+  usesGoalkeeperRegistration: true,
+  playerCategories: null,
+  checkRegistration: () => [],
+  checkStartingLineup: () => [],
   evaluateGroup,
+  groupCountsAsSecondHalfOpportunity: (group) => group.pairs.length > 0,
   applyCounters,
   describeUnavailability,
   secondHalfOpportunityLimit: MAX_SECOND_HALF_OPPORTUNITIES,
   reentryPlayerLimit: MAX_REENTRY_PLAYERS,
+  panelSummary(view) {
+    if (view.phase !== 'HALF_TIME' && view.phase !== 'SECOND_HALF') return null
+    const nums = reentryNumbers(view)
+    return (
+      (view.phase === 'SECOND_HALF' ? `交代 あと${Math.max(0, secondHalfRemaining(view))}回｜` : '') +
+      `リエントリー ${nums.length}/${MAX_REENTRY_PLAYERS}名` +
+      (nums.length > 0 ? `（${nums.join('・')}）` : '')
+    )
+  },
+  panelNotices(view) {
+    if (isPanelLocked(view)) return [`後半の交代を${MAX_SECOND_HALF_OPPORTUNITIES}回使っています`]
+    if (
+      reentryNumbers(view).length >= MAX_REENTRY_PLAYERS &&
+      (view.phase === 'HALF_TIME' || view.phase === 'SECOND_HALF')
+    ) {
+      return [`リエントリー${MAX_REENTRY_PLAYERS}名を使用済みのため、これ以上のリエントリーはできません`]
+    }
+    return []
+  },
+  isPanelLocked,
+  secondHalfBadge(view) {
+    return view.phase === 'SECOND_HALF' ? `後半の交代 あと${Math.max(0, secondHalfRemaining(view))}回` : null
+  },
 }

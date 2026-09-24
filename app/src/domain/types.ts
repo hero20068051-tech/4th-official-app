@@ -13,11 +13,17 @@ export type SubstitutionPhase = Extract<
   'FIRST_HALF' | 'HALF_TIME' | 'SECOND_HALF'
 >
 
+// A player attribute some tournaments' rules depend on (U13: how the player's
+// substitution rules differ). Unset (undefined) until the operator sets it;
+// rule sets that do not use categories ignore it completely.
+export type PlayerCategory = 'ELEMENTARY' | 'JUNIOR_HIGH_1' | 'JUNIOR_HIGH_2'
+
 export interface Player {
   id: string
   teamId: TeamId
   number: number
   isStarter: boolean
+  category?: PlayerCategory
   // Whether the player is registered as a goalkeeper substitute, not whether
   // they are currently playing as GK. Multiple players may be true.
   isRegisteredGK: boolean

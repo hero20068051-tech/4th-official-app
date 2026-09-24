@@ -232,6 +232,7 @@ export function describeUnavailability(
   playerId: string,
   rules: RuleSet,
   otherPairsInGroup: SubstitutionPair[] = [],
+  pairOutPlayerId?: string,
 ): string | null {
-  return rules.describeUnavailability({ state, roster, teamId, phase, playerId, otherPairsInGroup })
+  return rules.describeUnavailability({ state, roster, teamId, phase, playerId, otherPairsInGroup, pairOutPlayerId })
 }

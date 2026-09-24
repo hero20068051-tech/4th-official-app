@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { cardSummary, goalSummary } from '../domain/matchFormat'
 import { buildTimeline, formatTimelineMoment, playerYellowOrdinal } from '../domain/matchRecord'
 import type { ClockState, HalfKey } from '../domain/matchTypes'
-import type { CardDraft, GoalDraft, GoalTimeEdit, MoveToSecondHalfPreview, SecondHalfMove } from '../domain/matchStore'
+import type { CardDraft, GoalDraft, GoalTimeEdit, SecondHalfMove } from '../domain/matchStore'
 import type {
   CardEvent,
   GoalEvent,
@@ -14,7 +14,7 @@ import type {
 } from '../domain/types'
 import { CardEntryPanel } from './CardEntryPanel'
 import { GoalEntryPanel } from './GoalEntryPanel'
-import { MoveToSecondHalfForm } from './MoveToSecondHalfForm'
+import { MoveToSecondHalfForm, type MoveToSecondHalfPreviewView } from './MoveToSecondHalfForm'
 import { TeamBadge } from './TeamBadge'
 
 interface MatchTimelineProps {
@@ -34,7 +34,7 @@ interface MatchTimelineProps {
   previewMoveToHalfTime: (eventId: string) => number
   onMoveToHalfTime: (eventId: string) => void
   canMoveToSecondHalf: (eventId: string) => boolean
-  previewMoveToSecondHalf: (eventId: string, moves: SecondHalfMove[]) => MoveToSecondHalfPreview
+  previewMoveToSecondHalf: (eventId: string, moves: SecondHalfMove[]) => MoveToSecondHalfPreviewView
   onMoveToSecondHalf: (eventId: string, moves: SecondHalfMove[]) => string[]
   onEditGoal: (goalId: string, draft: GoalDraft, time?: GoalTimeEdit) => void
   onDeleteGoal: (goalId: string) => void
@@ -382,7 +382,7 @@ function SubstitutionRowContent({
   // second-half one (the operator supplies which pairs, how many occasions
   // and the second-half time).
   secondHalfMove?: {
-    preview: (moves: SecondHalfMove[]) => MoveToSecondHalfPreview
+    preview: (moves: SecondHalfMove[]) => MoveToSecondHalfPreviewView
     onMove: (moves: SecondHalfMove[]) => string[]
   }
 }) {

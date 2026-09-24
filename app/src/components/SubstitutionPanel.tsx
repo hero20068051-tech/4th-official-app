@@ -63,15 +63,12 @@ export function SubstitutionPanel({
 
   // "現在の状態から導かれる説明" — recomputed from matchState/phase every
   // render, never stored, so it can never go stale.
-  const secondHalfLimit = rules.secondHalfOpportunityLimit
-  const reentryLimit = rules.reentryPlayerLimit
-  const secondHalfRemaining = secondHalfLimit === null ? null : secondHalfLimit - counters.secondHalfOpportunitiesUsed
-  const isSecondHalfExhausted = phase === 'SECOND_HALF' && secondHalfRemaining !== null && secondHalfRemaining <= 0
-  const reentryNumbers = counters.reentryPlayerIds
-    .map((id) => teamRoster.find((p) => p.id === id)?.number)
-    .filter((n): n is number => n !== undefined)
-    .sort((a, b) => a - b)
-  const reentryExhausted = reentryLimit !== null && reentryNumbers.length >= reentryLimit
+  // What the counters say, and whether the panel is closed, is the rule set's
+  // to decide (each tournament counts and limits different things).
+  const view = { counters, phase, roster: teamRoster, teamId }
+  const summaryLine = rules.panelSummary(view)
+  const notices = rules.panelNotices(view)
+  const isSecondHalfExhausted = rules.isPanelLocked(view)
 
   // "一時的な操作エラー" — must not outlive the context it was shown in.
   // Cleared whenever the draft changes (a fresh selection, or "入力を取り
@@ -92,24 +89,13 @@ export function SubstitutionPanel({
     <section className="rounded-xl border border-gray-200 p-4">
       <h3 className="text-base font-bold text-gray-900">{teamLabel} の交代</h3>
 
-      {(phase === 'HALF_TIME' || phase === 'SECOND_HALF') && (
-        <p className="mt-1 text-xs text-gray-500">
-          {phase === 'SECOND_HALF' && secondHalfRemaining !== null && <>交代 あと{Math.max(0, secondHalfRemaining)}回｜</>}
-          リエントリー {reentryNumbers.length}{reentryLimit !== null && <>/{reentryLimit}</>}名
-          {reentryNumbers.length > 0 && <>（{reentryNumbers.join('・')}）</>}
-        </p>
-      )}
+      {summaryLine && <p className="mt-1 text-xs text-gray-500">{summaryLine}</p>}
 
-      {isSecondHalfExhausted && (
-        <p className="mt-2 rounded-lg bg-gray-100 p-2 text-sm font-medium text-gray-700">
-          後半の交代を{secondHalfLimit}回使っています
+      {notices.map((notice) => (
+        <p key={notice} className="mt-2 rounded-lg bg-gray-100 p-2 text-sm font-medium text-gray-700">
+          {notice}
         </p>
-      )}
-      {!isSecondHalfExhausted && reentryExhausted && (phase === 'HALF_TIME' || phase === 'SECOND_HALF') && (
-        <p className="mt-2 rounded-lg bg-gray-100 p-2 text-sm font-medium text-gray-700">
-          リエントリー{reentryLimit}名を使用済みのため、これ以上のリエントリーはできません
-        </p>
-      )}
+      ))}
 
       <div className="mt-3 space-y-4">
         {draft.pairs.map((pair, pairIndex) => (
@@ -279,6 +265,7 @@ function PairEditor({
               }`}
             >
               {player.number}
+              <CategoryTag rules={rules} category={player.category} />
             </button>
           )
         })}
@@ -297,6 +284,7 @@ function PairEditor({
                 player.id,
                 rules,
                 otherCompletePairs,
+                pair.outPlayerId,
               )
           const selected = pair.inPlayerId === player.id
           return (
@@ -315,10 +303,19 @@ function PairEditor({
               }`}
             >
               {player.number}
+              <CategoryTag rules={rules} category={player.category} />
             </button>
           )
         })}
       </div>
     </div>
   )
+}
+
+// A tiny "小 / 中1 / 中2" tag on a number chip, only for rule sets that use
+// player categories (nothing is shown for the others).
+function CategoryTag({ rules, category }: { rules: RuleSet; category: Player['category'] }) {
+  if (rules.playerCategories === null) return null
+  const option = rules.playerCategories.find((c) => c.id === category)
+  return <span className="ml-1 text-[10px] font-medium opacity-70">{option ? option.shortLabel : '?'}</span>
 }

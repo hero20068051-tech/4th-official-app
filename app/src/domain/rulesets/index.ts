@@ -1,5 +1,6 @@
 import { DEFAULT_RULESET_ID, type RuleSetId } from './ids'
 import { saitamaWomenRules } from './saitamaWomen'
+import { u13DevelopmentRules } from './u13Development'
 import type { RuleSet } from './types'
 
 export { DEFAULT_RULESET_ID } from './ids'
@@ -8,6 +9,7 @@ export type { RuleSet } from './types'
 
 const RULESETS: Record<RuleSetId, RuleSet> = {
   'saitama-women': saitamaWomenRules,
+  'u13-development': u13DevelopmentRules,
 }
 
 export function getRuleSet(id: RuleSetId): RuleSet {

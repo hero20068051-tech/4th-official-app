@@ -1,17 +1,21 @@
 import { useState } from 'react'
 import { checkStartLineups, displayTeamName, HYDRATION_MODE_LABELS, isValidHalfLength } from '../domain/matchSetup'
 import type { HydrationMode, MatchSettings } from '../domain/matchTypes'
-import type { TeamId } from '../domain/types'
-import { ruleSetOf } from '../domain/rulesets'
+import type { PlayerCategory, TeamId } from '../domain/types'
+import { listRuleSets, ruleSetOf, type RuleSetId } from '../domain/rulesets'
+import { StartBlockedDialog } from './StartBlockedDialog'
 import { StarterShortageDialog } from './StarterShortageDialog'
 import { TeamRosterEditor } from './TeamRosterEditor'
-import type { AppState } from '../domain/matchStore'
+import { checkMatchStart, type AppState } from '../domain/matchStore'
 
 const HALF_LENGTH_PRESETS = [30, 35]
 
 interface SetupScreenProps {
   state: AppState
   onUpdateSettings: (partial: Partial<MatchSettings>) => void
+  onSetRuleSet: (id: RuleSetId) => string[]
+  onSetCategory: (playerIds: string[], category: PlayerCategory) => string[]
+  onSetUnsetCategory: (teamId: TeamId, category: PlayerCategory) => string[]
   onAddPlayers: (teamId: TeamId, rawInput: string) => string[]
   onRemovePlayer: (playerId: string) => void
   onSetStarter: (playerId: string, isStarter: boolean) => string[]
@@ -24,6 +28,9 @@ interface SetupScreenProps {
 export function SetupScreen({
   state,
   onUpdateSettings,
+  onSetRuleSet,
+  onSetCategory,
+  onSetUnsetCategory,
   onAddPlayers,
   onRemovePlayer,
   onSetStarter,
@@ -43,10 +50,23 @@ export function SetupScreen({
     state.settings.halfLengthMinutes === Number(customHalfLength)
 
   const rules = ruleSetOf(state.settings)
+  const [ruleSetError, setRuleSetError] = useState<string[]>([])
+  const [startBlocked, setStartBlocked] = useState<{ label: string; messages: string[] }[] | null>(null)
   const homePlayers = state.roster.filter((p) => p.teamId === 'HOME')
   const awayPlayers = state.roster.filter((p) => p.teamId === 'AWAY')
 
   function handleStartClick() {
+    // Rule-specific reasons first (e.g. players whose category is not set yet).
+    const problems = checkMatchStart(state)
+    if (problems.length > 0) {
+      setStartBlocked(
+        problems.map((p) => ({
+          label: displayTeamName(p.teamId === 'HOME' ? state.settings.homeTeamName : state.settings.awayTeamName, p.teamId),
+          messages: p.messages,
+        })),
+      )
+      return
+    }
     const check = checkStartLineups({
       HOME: homePlayers.filter((p) => p.isStarter).length,
       AWAY: awayPlayers.filter((p) => p.isStarter).length,
@@ -79,6 +99,31 @@ export function SetupScreen({
       </div>
 
       <section className="space-y-3 rounded-xl border border-gray-200 p-4">
+        <div>
+          <p className="text-sm">大会ルール</p>
+          <div className="mt-1 grid grid-cols-2 gap-2">
+            {listRuleSets().map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                aria-pressed={rules.id === r.id}
+                onClick={() => setRuleSetError(rules.id === r.id ? [] : onSetRuleSet(r.id))}
+                className={`rounded-lg border px-3 py-3 text-base font-medium ${
+                  rules.id === r.id ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-300 text-gray-700 active:bg-gray-100'
+                }`}
+              >
+                {r.name}
+              </button>
+            ))}
+          </div>
+          {ruleSetError.length > 0 && (
+            <ul className="mt-1 space-y-1 text-sm font-medium text-red-600">
+              {ruleSetError.map((e) => (
+                <li key={e}>{e}</li>
+              ))}
+            </ul>
+          )}
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <label className="block text-sm">
             HOMEチーム名
@@ -173,6 +218,9 @@ export function SetupScreen({
       </section>
 
       <TeamRosterEditor
+        rules={rules}
+        onSetCategory={onSetCategory}
+        onSetUnsetCategory={onSetUnsetCategory}
         maxSquadSize={rules.maxSquadSize}
         teamId="HOME"
         teamLabel={state.settings.homeTeamName.trim() || 'HOME'}
@@ -183,6 +231,9 @@ export function SetupScreen({
         onSetRegisteredGK={onSetRegisteredGK}
       />
       <TeamRosterEditor
+        rules={rules}
+        onSetCategory={onSetCategory}
+        onSetUnsetCategory={onSetUnsetCategory}
         maxSquadSize={rules.maxSquadSize}
         teamId="AWAY"
         teamLabel={state.settings.awayTeamName.trim() || 'AWAY'}
@@ -202,6 +253,8 @@ export function SetupScreen({
           前半開始
         </button>
       </div>
+
+      {startBlocked && <StartBlockedDialog problems={startBlocked} onBack={() => setStartBlocked(null)} />}
 
       {lineupDialog && (
         <StarterShortageDialog

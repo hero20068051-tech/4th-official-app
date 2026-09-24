@@ -2,9 +2,11 @@ import { useState } from 'react'
 import { parseElapsedInput } from '../domain/clock'
 import type { MoveToSecondHalfPreview, SecondHalfMove } from '../domain/matchStore'
 
+export type MoveToSecondHalfPreviewView = MoveToSecondHalfPreview & { opportunitiesConsumed: number }
+
 interface MoveToSecondHalfFormProps {
   pairLabels: string[]
-  preview: (moves: SecondHalfMove[]) => MoveToSecondHalfPreview
+  preview: (moves: SecondHalfMove[]) => MoveToSecondHalfPreviewView
   // Returns error messages; empty means it was applied.
   onApply: (moves: SecondHalfMove[]) => string[]
   onCancel: () => void
@@ -92,7 +94,7 @@ export function MoveToSecondHalfForm({ pairLabels, preview, onApply, onCancel }:
   }
 
   const result = problem ? null : preview(moves)
-  const occasions = perPairTimes ? selected.length : 1
+  const occasions = result ? result.opportunitiesConsumed : 0
 
   function toggle(i: number) {
     setChecked((prev) => prev.map((c, k) => (k === i ? !c : c)))

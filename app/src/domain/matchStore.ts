@@ -16,7 +16,7 @@ import {
   parseNumberList,
 } from './matchSetup'
 import type { ClockState, HalfKey, HydrationCompletionState, MatchSettings } from './matchTypes'
-import { ruleSetOf } from './rulesets'
+import { getRuleSet, ruleSetOf, type RuleSetId } from './rulesets'
 import type {
   CardEvent,
   CardKind,
@@ -24,6 +24,7 @@ import type {
   GoalEvent,
   MatchPhase,
   Player,
+  PlayerCategory,
   RecordablePhase,
   ReplayResult,
   SubstitutionEvent,
@@ -203,8 +204,79 @@ export function setRegisteredGK(state: AppState, targetPlayerId: string, isRegis
   }
 }
 
+// --- Tournament rules and player categories (Phase 2.5) ---
+
+export interface MatchSetupResult {
+  state: AppState
+  errors: string[]
+}
+
+// Choosing which tournament's rules the match is played under. Only before
+// kick-off, and refused if the players already registered would break the
+// chosen rules (e.g. more than that league's squad limit) — nothing is ever
+// removed or rewritten to make it fit.
+export function setRuleSet(state: AppState, id: RuleSetId): MatchSetupResult {
+  if (state.phase !== 'PRE_MATCH') {
+    return { state, errors: ['試合開始後は大会ルールを変更できません'] }
+  }
+  const rules = getRuleSet(id)
+  if (rules.maxSquadSize !== null) {
+    for (const teamId of ['HOME', 'AWAY'] as TeamId[]) {
+      const count = state.roster.filter((p) => p.teamId === teamId).length
+      if (count > rules.maxSquadSize) {
+        return { state, errors: [`登録が${rules.maxSquadSize}名を超えているため「${rules.name}」に切り替えられません`] }
+      }
+    }
+  }
+  const errors = (['HOME', 'AWAY'] as TeamId[]).flatMap((teamId) => rules.checkRegistration(state.roster, teamId))
+  if (errors.length > 0) return { state, errors }
+  return { state: { ...state, settings: { ...state.settings, rulesetId: id } }, errors: [] }
+}
+
+// Sets the category of the given players (only for rule sets that use
+// categories). Refused as a whole if the result would break the rules'
+// registration limits (e.g. more than five 中2).
+export function setPlayerCategory(
+  state: AppState,
+  playerIds: string[],
+  category: PlayerCategory | undefined,
+): MatchSetupResult {
+  if (state.phase !== 'PRE_MATCH') {
+    return { state, errors: ['試合開始後は選手区分を変更できません'] }
+  }
+  const rules = ruleSetOf(state.settings)
+  if (rules.playerCategories === null) {
+    return { state, errors: ['この大会ルールでは選手区分は使いません'] }
+  }
+  const chosen = new Set(playerIds)
+  const roster = state.roster.map((p) => (chosen.has(p.id) ? { ...p, category } : p))
+  const affected = new Set(state.roster.filter((p) => chosen.has(p.id)).map((p) => p.teamId))
+  const errors = [...affected].flatMap((teamId) => rules.checkRegistration(roster, teamId))
+  if (errors.length > 0) return { state, errors }
+  return { state: { ...state, roster }, errors: [] }
+}
+
+// "Make everyone who is still unset an elementary-school player" — an explicit
+// bulk action by the operator (never an automatic default).
+export function setUnsetPlayersCategory(state: AppState, teamId: TeamId, category: PlayerCategory): MatchSetupResult {
+  const ids = state.roster.filter((p) => p.teamId === teamId && p.category === undefined).map((p) => p.id)
+  return setPlayerCategory(state, ids, category)
+}
+
+// Rule-specific reasons a match cannot start yet, per team (empty = nothing
+// in the way). The headcount rule (11 / 7-10 / 6 or fewer) is checked
+// separately by checkStartLineups.
+export function checkMatchStart(state: AppState): { teamId: TeamId; messages: string[] }[] {
+  const rules = ruleSetOf(state.settings)
+  return (['HOME', 'AWAY'] as TeamId[])
+    .map((teamId) => ({ teamId, messages: rules.checkStartingLineup(state.roster, teamId) }))
+    .filter((r) => r.messages.length > 0)
+}
+
 export function startFirstHalfPhase(state: AppState, now: number): AppState {
   if (state.phase !== 'PRE_MATCH') return state
+  // Rule-specific reasons a team may not kick off (none for rule sets without such checks).
+  if (checkMatchStart(state).length > 0) return state
   return { ...state, phase: 'FIRST_HALF', clock: startFirstHalf(state.clock, now) }
 }
 
@@ -248,11 +320,16 @@ export function correctStarters(state: AppState, teamId: TeamId, starterPlayerId
   if (rules.evaluateStartEligibility(chosen.size).level === 'BLOCK') {
     return { state, errors: ['先発は7名以上必要です'] }
   }
+  const corrected = state.roster.map((p) => (p.teamId === teamId ? { ...p, isStarter: chosen.has(p.id) } : p))
+  const lineupProblems = rules.checkStartingLineup(corrected, teamId)
+  if (lineupProblems.length > 0) {
+    return { state, errors: lineupProblems }
+  }
 
   return {
     state: {
       ...state,
-      roster: state.roster.map((p) => (p.teamId === teamId ? { ...p, isStarter: chosen.has(p.id) } : p)),
+      roster: corrected,
       // A half-built substitution refers to the old lineup; drop it.
       drafts: { ...state.drafts, [teamId]: emptyDraft(teamId) },
     },
@@ -613,6 +690,18 @@ export function moveSubstitutionPairsToSecondHalf(
   }
 
   return { state: { ...state, substitutionEvents: events }, errors: [] }
+}
+
+// How many of the limited second-half opportunities these moves would use
+// under the match's rules (an elementary-only group in U13 uses none).
+export function opportunitiesUsedByMoves(state: AppState, eventId: string, moves: SecondHalfMove[]): number {
+  const event = state.substitutionEvents.find((e) => e.id === eventId)
+  if (!event) return 0
+  const group = event.teamGroups[0]
+  const rules = ruleSetOf(state.settings)
+  return moves.filter((m) =>
+    rules.groupCountsAsSecondHalfOpportunity({ teamId: group.teamId, pairs: m.pairIndexes.map((i) => group.pairs[i]) }, state.roster),
+  ).length
 }
 
 export interface MoveToSecondHalfPreview {
