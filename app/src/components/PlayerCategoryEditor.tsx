@@ -48,7 +48,7 @@ export function PlayerCategoryEditor({ rules, players, onAssign, onAssignUnset }
               key={p.id}
               type="button"
               aria-pressed={on}
-              aria-label={`${p.number}番（${option ? option.label : '未設定'}）`}
+              aria-label={`${p.number}番（${option ? option.label : '未設定'}${p.isRegisteredGK ? '・GK' : ''}）`}
               onClick={() => toggle(p.id)}
               className={`flex h-12 flex-col items-center justify-center rounded-lg border leading-none ${
                 on
@@ -59,7 +59,7 @@ export function PlayerCategoryEditor({ rules, players, onAssign, onAssignUnset }
               }`}
             >
               <span className="text-lg font-bold tabular-nums">{p.number}</span>
-              <span className="mt-0.5 text-[10px] font-medium opacity-80">{option ? option.shortLabel : '未設定'}</span>
+              <span className="mt-0.5 text-[10px] font-medium opacity-80">{option ? option.shortLabel : '未設定'}{p.isRegisteredGK ? '・GK' : ''}</span>
             </button>
           )
         })}

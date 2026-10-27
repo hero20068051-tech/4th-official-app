@@ -79,11 +79,16 @@ export function StarterCorrectionPanel({ rules, teamId, teamLabel, players, onCo
               onClick={() => toggle(p)}
               aria-pressed={on}
               aria-label={`${p.number}番${on ? '（先発）' : ''}`}
-              className={`h-12 rounded-lg border text-lg font-bold tabular-nums ${
+              className={`flex h-12 flex-col items-center justify-center rounded-lg border text-lg font-bold leading-none tabular-nums ${
                 on ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-300 bg-white text-gray-800 active:bg-gray-100'
               }`}
             >
               {p.number}
+              {rules.playerTag(p) !== null && (
+                <span className={`mt-0.5 text-[10px] ${rules.playerTag(p)!.includes('GK') ? 'font-bold' : 'font-medium opacity-70'}`}>
+                  {rules.playerTag(p)}
+                </span>
+              )}
             </button>
           )
         })}

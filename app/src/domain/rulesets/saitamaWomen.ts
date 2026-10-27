@@ -251,7 +251,7 @@ export const saitamaWomenRules: RuleSet = {
   maxSquadSize: MAX_SQUAD_SIZE,
   maxStarters: MAX_STARTERS,
   evaluateStartEligibility: standardStartEligibility,
-  usesGoalkeeperRegistration: true,
+  goalkeeperRegistration: 'AFFECTS_RULES',
   playerCategories: null,
   checkRegistration: () => [],
   checkStartingLineup: () => [],
@@ -259,6 +259,7 @@ export const saitamaWomenRules: RuleSet = {
   groupCountsAsSecondHalfOpportunity: (group) => group.pairs.length > 0,
   applyCounters,
   describeUnavailability,
+  playerTag: () => null, // unchanged from the field-tested screens: number only
   secondHalfOpportunityLimit: MAX_SECOND_HALF_OPPORTUNITIES,
   reentryPlayerLimit: MAX_REENTRY_PLAYERS,
   panelSummary(view) {

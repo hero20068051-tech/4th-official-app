@@ -63,8 +63,12 @@ export interface RuleSet {
   readonly maxSquadSize: number | null
   readonly maxStarters: number
   evaluateStartEligibility(starterCount: number): StartEligibility
-  // Whether the roster screen offers "GK registration" (only rules that use it).
-  readonly usesGoalkeeperRegistration: boolean
+  // How "GK registration" is used. Both offer the same registration checkbox;
+  // they differ in whether the rules read it:
+  //  - AFFECTS_RULES: the registration takes part in the judgement itself.
+  //  - DISPLAY_ONLY: only so the 4th official can see who the goalkeepers are;
+  //    a goalkeeper is judged exactly like any other player of the category.
+  readonly goalkeeperRegistration: 'AFFECTS_RULES' | 'DISPLAY_ONLY'
   // null = this tournament does not distinguish player categories
   readonly playerCategories: readonly PlayerCategoryOption[] | null
   // Problems with who is registered (blocks the change). Empty = fine.
@@ -95,6 +99,9 @@ export interface RuleSet {
     // The OUT player already chosen for the pair being built, if any.
     pairOutPlayerId?: string
   }): string | null
+
+  // The small tag on a player's number chip (null = nothing beyond the number).
+  playerTag(player: Player): string | null
 
   // --- what the screens show about the limits (null = no such limit)
   readonly secondHalfOpportunityLimit: number | null

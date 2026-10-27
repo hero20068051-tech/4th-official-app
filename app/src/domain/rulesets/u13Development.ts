@@ -217,7 +217,7 @@ export const u13DevelopmentRules: RuleSet = {
   maxSquadSize: null, // not confirmed by the tournament rules provided — left unset on purpose
   maxStarters: 11,
   evaluateStartEligibility: standardStartEligibility,
-  usesGoalkeeperRegistration: false,
+  goalkeeperRegistration: 'DISPLAY_ONLY',
   playerCategories: U13_CATEGORIES,
   checkRegistration,
   checkStartingLineup,
@@ -225,11 +225,17 @@ export const u13DevelopmentRules: RuleSet = {
   groupCountsAsSecondHalfOpportunity: groupHasJuniorHighIn,
   applyCounters,
   describeUnavailability,
+  // Category and goalkeeper, e.g. 小 / 中1 / 中2・GK. Display only: nothing in
+  // the judgement above reads isRegisteredGK.
+  playerTag(player) {
+    const category = U13_CATEGORIES.find((c) => c.id === player.category)?.shortLabel ?? '?'
+    return player.isRegisteredGK ? `${category}・GK` : category
+  },
   secondHalfOpportunityLimit: U13_MAX_SECOND_HALF_JUNIOR_HIGH_OPPORTUNITIES,
   reentryPlayerLimit: null,
   panelSummary(view) {
     const base = `中学生の交代 ${juniorHighUsed(view)}/${U13_MAX_JUNIOR_HIGH_SUBSTITUTES}名`
-    return view.phase === 'SECOND_HALF' ? `後半の中学生の交代 あと${Math.max(0, secondHalfRemaining(view))}回｜${base}` : base
+    return view.phase === 'SECOND_HALF' ? `${base}｜後半 あと${Math.max(0, secondHalfRemaining(view))}回` : base
   },
   panelNotices(view) {
     const notices: string[] = []

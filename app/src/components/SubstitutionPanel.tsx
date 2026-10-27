@@ -265,7 +265,7 @@ function PairEditor({
               }`}
             >
               {player.number}
-              <CategoryTag rules={rules} category={player.category} />
+              <PlayerTag rules={rules} player={player} />
             </button>
           )
         })}
@@ -303,7 +303,7 @@ function PairEditor({
               }`}
             >
               {player.number}
-              <CategoryTag rules={rules} category={player.category} />
+              <PlayerTag rules={rules} player={player} />
             </button>
           )
         })}
@@ -312,10 +312,12 @@ function PairEditor({
   )
 }
 
-// A tiny "小 / 中1 / 中2" tag on a number chip, only for rule sets that use
-// player categories (nothing is shown for the others).
-function CategoryTag({ rules, category }: { rules: RuleSet; category: Player['category'] }) {
-  if (rules.playerCategories === null) return null
-  const option = rules.playerCategories.find((c) => c.id === category)
-  return <span className="ml-1 text-[10px] font-medium opacity-70">{option ? option.shortLabel : '?'}</span>
+// A tiny tag on a number chip (category and/or goalkeeper), shown only for the
+// rule sets that define one — nothing is added for the others.
+function PlayerTag({ rules, player }: { rules: RuleSet; player: Player }) {
+  const tag = rules.playerTag(player)
+  if (tag === null) return null
+  // A goalkeeper should stand out at a glance: bolder and not faded.
+  const isGoalkeeper = tag.includes('GK')
+  return <span className={`ml-1 text-[10px] ${isGoalkeeper ? 'font-bold' : 'font-medium opacity-70'}`}>{tag}</span>
 }

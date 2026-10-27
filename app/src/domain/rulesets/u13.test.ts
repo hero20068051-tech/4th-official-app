@@ -549,8 +549,8 @@ describe('the two rule sets do not contaminate each other', () => {
     expect(saitamaWomenRules.secondHalfBadge({ counters: { usedSubstituteIds: [], secondHalfOpportunitiesUsed: 1, reentryPlayerIds: [] }, phase: 'SECOND_HALF', roster: [], teamId: 'HOME' })).toBe('後半の交代 あと2回')
     expect(u13DevelopmentRules.secondHalfBadge({ counters: { usedSubstituteIds: [], secondHalfOpportunitiesUsed: 1, reentryPlayerIds: [] }, phase: 'SECOND_HALF', roster: [], teamId: 'HOME' })).toBe('中学生の後半交代 あと2回')
     expect(getRuleSet('u13-development').name).toBe('U13育成リーグ')
-    expect(u13DevelopmentRules.usesGoalkeeperRegistration).toBe(false)
-    expect(saitamaWomenRules.usesGoalkeeperRegistration).toBe(true)
+    expect(u13DevelopmentRules.goalkeeperRegistration).toBe('DISPLAY_ONLY')
+    expect(saitamaWomenRules.goalkeeperRegistration).toBe('AFFECTS_RULES')
   })
 })
 

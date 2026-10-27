@@ -86,6 +86,7 @@ export function TeamRosterEditor({
       {rules.playerCategories !== null && (
         <p className="mt-1 text-xs text-gray-700">
           {rules.playerCategories.map((o) => `${o.label} ${players.filter((p) => p.category === o.id).length}名`).join('／')}
+          {players.some((p) => p.isRegisteredGK) && `／GK ${players.filter((p) => p.isRegisteredGK).length}名`}
           {players.some((p) => p.category === undefined) && (
             <span className="font-bold text-red-700">
               ／⚠未設定 {players.filter((p) => p.category === undefined).length}名
@@ -189,7 +190,6 @@ export function TeamRosterEditor({
                 />
                 先発
               </label>
-              {rules.usesGoalkeeperRegistration && (
               <label className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -199,7 +199,6 @@ export function TeamRosterEditor({
                 />
                 GK登録
               </label>
-              )}
             </div>
           </li>
         ))}
